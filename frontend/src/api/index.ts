@@ -26,6 +26,7 @@ export { accountsAPI } from './accounts'
 
 // Admin APIs
 export { adminAPI } from './admin'
+export { default as upstreamsAPI } from './admin/upstreams'
 
 // Default export
 export { default } from './client'

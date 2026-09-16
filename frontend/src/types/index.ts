@@ -2442,3 +2442,12 @@ export type {
   PlatformQuotaWindow,
   PlatformQuotasResponse,
 } from '@/api/admin/users'
+
+export type {
+  Upstream,
+  UpstreamBalanceSnapshot,
+  UpstreamGroupItem,
+  UpstreamInput,
+  UpstreamResource,
+  UpstreamSyncResult
+} from './upstream'

@@ -46,6 +46,8 @@ func RegisterAdminRoutes(
 		// 账号管理
 		registerAccountRoutes(admin, h, stepUpAuth)
 
+		registerUpstreamRoutes(admin, h)
+
 		// 公告管理
 		registerAnnouncementRoutes(admin, h)
 
@@ -133,6 +135,25 @@ func RegisterAdminRoutes(
 
 		// 操作审计日志
 		registerAuditLogRoutes(admin, h, stepUpAuth)
+	}
+}
+
+func registerUpstreamRoutes(admin *gin.RouterGroup, h *handler.Handlers) {
+	upstreams := admin.Group("/upstreams")
+	{
+		upstreams.GET("", h.Admin.Upstream.List)
+		upstreams.POST("", h.Admin.Upstream.Create)
+		upstreams.GET("/:id", h.Admin.Upstream.GetByID)
+		upstreams.PUT("/:id", h.Admin.Upstream.Update)
+		upstreams.DELETE("/:id", h.Admin.Upstream.Delete)
+		upstreams.POST("/:id/test", h.Admin.Upstream.TestConnection)
+		upstreams.POST("/:id/balance/refresh", h.Admin.Upstream.RefreshBalance)
+		upstreams.GET("/:id/groups", h.Admin.Upstream.FetchGroups)
+		upstreams.GET("/:id/resources", h.Admin.Upstream.ListResources)
+		upstreams.POST("/:id/keys", h.Admin.Upstream.CreateKey)
+		upstreams.POST("/resources/:rid/models/refresh", h.Admin.Upstream.RefreshModels)
+		upstreams.POST("/resources/:rid/chat/completions", h.Admin.Upstream.ChatCompletion)
+		upstreams.POST("/resources/:rid/sync", h.Admin.Upstream.SyncToAccount)
 	}
 }
 
