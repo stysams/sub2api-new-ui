@@ -729,7 +729,7 @@ func loginNewAPI(ctx context.Context, baseURL, identifier, password string, cfg 
 	if err != nil {
 		return nil, err
 	}
-	defer loginResponse.Body.Close()
+	defer func() { _ = loginResponse.Body.Close() }()
 	loginPayload, err := io.ReadAll(io.LimitReader(loginResponse.Body, upstreamResponseLimit))
 	if err != nil {
 		return nil, err
@@ -778,7 +778,7 @@ func loginNewAPI(ctx context.Context, baseURL, identifier, password string, cfg 
 	if err != nil {
 		return nil, err
 	}
-	defer tokenResponse.Body.Close()
+	defer func() { _ = tokenResponse.Body.Close() }()
 	tokenPayload, err := io.ReadAll(io.LimitReader(tokenResponse.Body, upstreamResponseLimit))
 	if err != nil {
 		return nil, err
@@ -817,7 +817,7 @@ func doSub2Login(ctx context.Context, client *http.Client, baseURL, path string,
 	if err != nil {
 		return nil, err
 	}
-	defer resp.Body.Close()
+	defer func() { _ = resp.Body.Close() }()
 	payload, readErr := io.ReadAll(io.LimitReader(resp.Body, upstreamResponseLimit))
 	if readErr != nil {
 		return nil, readErr
@@ -869,17 +869,6 @@ func maskSecret(secret string) string {
 func formatRate(rate float64) string {
 	return strings.TrimRight(strings.TrimRight(fmt.Sprintf("%.4f", rate), "0"), ".")
 }
-func mergeExtra(base, updates map[string]any) map[string]any {
-	result := map[string]any{}
-	for k, v := range base {
-		result[k] = v
-	}
-	for k, v := range updates {
-		result[k] = v
-	}
-	return result
-}
-func accountIntPtr(v int) *int { return &v }
 
 func modelWhitelistMapping(models []string) map[string]string {
 	mapping := make(map[string]string, len(models))

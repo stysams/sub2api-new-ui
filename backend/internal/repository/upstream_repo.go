@@ -21,7 +21,7 @@ func (r *upstreamRepository) List(ctx context.Context) ([]*service.Upstream, err
 	if err != nil {
 		return nil, fmt.Errorf("list upstreams: %w", err)
 	}
-	defer rows.Close()
+	defer func() { _ = rows.Close() }()
 	var result []*service.Upstream
 	for rows.Next() {
 		item, err := scanUpstream(rows)
@@ -82,7 +82,7 @@ func (r *upstreamRepository) ListResources(ctx context.Context, upstreamID int64
 	if err != nil {
 		return nil, fmt.Errorf("list upstream resources: %w", err)
 	}
-	defer rows.Close()
+	defer func() { _ = rows.Close() }()
 	var result []*service.UpstreamResource
 	for rows.Next() {
 		item, err := scanResource(rows)
