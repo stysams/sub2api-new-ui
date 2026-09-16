@@ -17,6 +17,7 @@ const (
 	SettingKeyPromptRecordingFilterAgent  = "prompt_recording_filter_agent_preset_enabled"
 	SettingKeyPromptRecordingFilterSkills = "prompt_recording_filter_skills_enabled"
 	SettingKeyPromptRecordingRetention    = "prompt_recording_retention_days"
+	SettingKeyPromptRecordingMaxMessages  = "prompt_recording_max_messages"
 
 	ConfigInvalidationChannel = "sub2api:prompt_guard:config:invalidate"
 	PayloadKeyPrefix          = "sub2api:prompt_audit:payload:"
@@ -100,6 +101,7 @@ type Request struct {
 	recordingCorrelation   *promptRecordCorrelation
 	recordingIdentity      string
 	recordingRetentionDays int
+	recordingMaxMessages   int
 	Stage                  string
 	TurnNo                 int
 }

@@ -176,13 +176,13 @@ func TestPreparePromptRecordKeepsOnlyLatestThirtyMessages(t *testing.T) {
 	require.NoError(t, json.Unmarshal(prepared.StoredBody, &stored))
 	items, ok := stored["messages"].([]any)
 	require.True(t, ok)
-	require.Len(t, items, promptRecordMaxMessages)
+	require.Len(t, items, promptRecordDefaultMaxMessages)
 	for index, item := range items {
 		message, ok := item.(map[string]any)
 		require.True(t, ok)
 		require.Equal(t, "message-"+strconv.Itoa(index+5), message["content"])
 	}
-	require.Equal(t, promptRecordMaxMessages, prepared.StoredSnapshot.MessageCount)
+	require.Equal(t, promptRecordDefaultMaxMessages, prepared.StoredSnapshot.MessageCount)
 	// The full request identity remains based on the original request.
 	original := promptRecordMetadataDocument(Request{Protocol: "openai_chat"}, mustDecodePromptDocument(t, body), body, false)
 	require.Equal(t, original.PromptHash, prepared.OriginalPromptHash)

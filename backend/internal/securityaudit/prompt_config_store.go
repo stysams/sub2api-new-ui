@@ -51,6 +51,7 @@ type ConfigManager struct {
 	recordingFilterAgentDisabled  atomic.Bool
 	recordingFilterSkillsDisabled atomic.Bool
 	recordingRetentionDays        atomic.Int64
+	recordingMaxMessages          atomic.Int32
 	// configUntrusted is set when a load/reload fails before a trustworthy
 	// snapshot is installed. Combined with expectedBlocking, EffectiveMode
 	// fails closed so a persisted blocking policy cannot be silently skipped
@@ -125,6 +126,7 @@ func (m *ConfigManager) Reload(ctx context.Context) error {
 		SettingKeyPromptRecordingHeaders, SettingKeyPromptRecordingPrompt, SettingKeyPromptRecordingResponse,
 		SettingKeyPromptRecordingFilterPreset, SettingKeyPromptRecordingFilterAgent, SettingKeyPromptRecordingFilterSkills,
 		SettingKeyPromptRecordingRetention,
+		SettingKeyPromptRecordingMaxMessages,
 	})
 	if err != nil {
 		m.recordLoadError(err)
@@ -143,6 +145,11 @@ func (m *ConfigManager) Reload(ctx context.Context) error {
 		retention = 0
 	}
 	m.recordingRetentionDays.Store(int64(retention))
+	maxMsgs, err := strconv.Atoi(values[SettingKeyPromptRecordingMaxMessages])
+	if err != nil || maxMsgs < 1 || maxMsgs > 999 {
+		maxMsgs = promptRecordDefaultMaxMessages
+	}
+	m.recordingMaxMessages.Store(int32(maxMsgs))
 	m.observeExpectedState(values[SettingKeyPromptAuditConfig], values[SettingKeyRiskControl] == "true")
 	storage, err := ParseStorageConfig(values[SettingKeyPromptAuditConfig])
 	if err != nil {
@@ -204,6 +211,17 @@ func (m *ConfigManager) PromptRecordingRetentionDays() int {
 	return int(m.recordingRetentionDays.Load())
 }
 
+func (m *ConfigManager) PromptRecordingMaxMessages() int {
+	if m == nil {
+		return promptRecordDefaultMaxMessages
+	}
+	v := int(m.recordingMaxMessages.Load())
+	if v < 1 || v > 999 {
+		return promptRecordDefaultMaxMessages
+	}
+	return v
+}
+
 func (m *ConfigManager) SavePromptRecordingSettings(ctx context.Context, update PromptRecordingSettingsUpdate) error {
 	if m == nil || m.settings == nil {
 		return errors.New("prompt recording setting repository unavailable")
@@ -236,6 +254,12 @@ func (m *ConfigManager) SavePromptRecordingSettings(ctx context.Context, update 
 	if update.FilterSkills != nil {
 		updates[SettingKeyPromptRecordingFilterSkills] = strconv.FormatBool(*update.FilterSkills)
 	}
+	if update.MaxMessages != nil {
+		if *update.MaxMessages < 1 || *update.MaxMessages > 999 {
+			return errors.New("max_messages must be between 1 and 999")
+		}
+		updates[SettingKeyPromptRecordingMaxMessages] = strconv.Itoa(*update.MaxMessages)
+	}
 	if err := m.settings.SetMultiple(ctx, updates); err != nil {
 		return err
 	}
@@ -262,6 +286,9 @@ func (m *ConfigManager) SavePromptRecordingSettings(ctx context.Context, update 
 	}
 	if update.FilterSkills != nil {
 		m.recordingFilterSkillsDisabled.Store(!*update.FilterSkills)
+	}
+	if update.MaxMessages != nil {
+		m.recordingMaxMessages.Store(int32(*update.MaxMessages))
 	}
 	if m.redis != nil {
 		version := m.expected.Load()

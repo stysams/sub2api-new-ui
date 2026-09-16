@@ -11,7 +11,7 @@
           </p>
         </div>
         <div
-          class="flex w-full flex-col gap-3 sm:flex-row sm:items-start sm:justify-between lg:w-auto lg:justify-end"
+          class="flex w-full flex-col gap-2 sm:flex-row sm:items-start sm:justify-end lg:w-auto"
           data-test="prompt-recording-toolbar"
         >
           <div class="flex w-full items-center justify-between gap-3 sm:w-auto sm:justify-start">
@@ -47,11 +47,11 @@
             </button>
           </div>
           <form
-            class="grid w-full min-w-0 grid-cols-[minmax(0,1fr)_auto] items-end gap-x-2 gap-y-1 border-gray-200 sm:w-64 sm:border-l sm:pl-4 dark:border-dark-700"
+            class="grid min-w-0 grid-cols-[minmax(0,1fr)_auto] items-end gap-x-2 gap-y-0.5 border-gray-200 sm:border-l sm:pl-3 dark:border-dark-700"
             data-test="prompt-record-retention-form"
             @submit.prevent="saveRetention"
           >
-            <label for="prompt-record-retention" class="input-label col-span-2">
+            <label for="prompt-record-retention" class="input-label col-span-2 text-xs">
               {{ t('admin.promptRecords.retentionDays') }}
               <span class="ml-1 font-normal text-gray-500 dark:text-gray-400">
                 {{ t('admin.promptRecords.retentionCompactHelp') }}
@@ -65,12 +65,12 @@
               max="3650"
               step="1"
               required
-              class="input h-10 w-full min-w-0"
+              class="input h-8 w-full min-w-0"
               aria-describedby="prompt-record-retention-help"
               :disabled="recordingLoading || recordingSaving"
             />
             <button
-              class="btn btn-secondary h-10 px-3"
+              class="btn btn-secondary h-8 px-2 text-xs"
               type="submit"
               :disabled="recordingLoading || recordingSaving"
             >
@@ -79,6 +79,36 @@
             <p id="prompt-record-retention-help" class="sr-only">
               {{ t('admin.promptRecords.retentionHelp') }}
             </p>
+          </form>
+          <form
+            class="grid min-w-0 grid-cols-[minmax(0,1fr)_auto] items-end gap-x-2 gap-y-0.5 border-gray-200 sm:border-l sm:pl-3 dark:border-dark-700"
+            data-test="prompt-record-max-messages-form"
+            @submit.prevent="saveMaxMessages"
+          >
+            <label for="prompt-record-max-messages" class="input-label col-span-2 text-xs">
+              {{ t('admin.promptRecords.maxMessages') }}
+              <span class="ml-1 font-normal text-gray-500 dark:text-gray-400">
+                {{ t('admin.promptRecords.maxMessagesCompactHelp') }}
+              </span>
+            </label>
+            <input
+              id="prompt-record-max-messages"
+              v-model.number="maxMessages"
+              type="number"
+              min="1"
+              max="999"
+              step="1"
+              required
+              class="input h-8 w-full min-w-0"
+              :disabled="recordingLoading || recordingSaving"
+            />
+            <button
+              class="btn btn-secondary h-8 px-2 text-xs"
+              type="submit"
+              :disabled="recordingLoading || recordingSaving"
+            >
+              {{ t('common.save') }}
+            </button>
           </form>
         </div>
       </div>
@@ -561,6 +591,8 @@ const { copyToClipboard } = useClipboard()
 const recordingEnabled = ref<boolean | null>(null)
 const retentionDays = ref(0)
 const savedRetentionDays = ref(0)
+const maxMessages = ref(30)
+const savedMaxMessages = ref(30)
 async function saveRetention() {
   if (recordingLoading.value || recordingSaving.value) return
   if (!Number.isInteger(retentionDays.value) || retentionDays.value < 0 || retentionDays.value > 3650) {
@@ -574,6 +606,22 @@ async function saveRetention() {
     appStore.showSuccess(t('admin.promptRecords.recordingContentSaved'))
   } catch {
     retentionDays.value = savedRetentionDays.value
+    appStore.showError(t('admin.promptRecords.recordingUpdateFailed'))
+  } finally { recordingSaving.value = false }
+}
+async function saveMaxMessages() {
+  if (recordingLoading.value || recordingSaving.value) return
+  if (!Number.isInteger(maxMessages.value) || maxMessages.value < 1 || maxMessages.value > 999) {
+    appStore.showError(t('admin.promptRecords.invalidMaxMessages'))
+    return
+  }
+  recordingSaving.value = true
+  try {
+    const config = await updatePromptRecordingConfig({ max_messages: maxMessages.value })
+    savedMaxMessages.value = maxMessages.value = config.max_messages ?? 30
+    appStore.showSuccess(t('admin.promptRecords.recordingContentSaved'))
+  } catch {
+    maxMessages.value = savedMaxMessages.value
     appStore.showError(t('admin.promptRecords.recordingUpdateFailed'))
   } finally { recordingSaving.value = false }
 }
@@ -758,6 +806,7 @@ async function loadRecordingConfig() {
     const config = await getPromptRecordingConfig()
     recordingEnabled.value = config.enabled
     savedRetentionDays.value = retentionDays.value = config.retention_days ?? 0
+    savedMaxMessages.value = maxMessages.value = config.max_messages ?? 30
     recordingContent.headers_enabled = config.headers_enabled ?? true
     recordingContent.prompt_enabled = config.prompt_enabled ?? true
     recordingContent.response_enabled = config.response_enabled ?? true

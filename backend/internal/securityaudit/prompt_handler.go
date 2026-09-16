@@ -73,6 +73,10 @@ func (h *PromptAdminHandler) UpdatePromptRecordingConfig(c *gin.Context) {
 		response.ErrorFrom(c, infraerrors.BadRequest("prompt_recording_invalid_retention", "保留天数必须在 0 至 3650 之间"))
 		return
 	}
+	if request.MaxMessages != nil && (*request.MaxMessages < 1 || *request.MaxMessages > 999) {
+		response.ErrorFrom(c, infraerrors.BadRequest("prompt_recording_invalid_max_messages", "消息条数必须在 1 至 999 之间"))
+		return
+	}
 	var err error
 	if request.OnlyEnabled() {
 		config, err = h.service.SavePromptRecordingConfig(c.Request.Context(), *request.Enabled)

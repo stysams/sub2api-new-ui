@@ -77,6 +77,7 @@ export interface PromptRecordingConfig {
 	filter_preset: boolean
 	filter_agent_preset: boolean
 	filter_skills: boolean
+	max_messages: number
 }
 
 export async function getPromptRecordingConfig() {

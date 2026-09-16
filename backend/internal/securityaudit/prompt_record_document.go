@@ -2,7 +2,9 @@ package securityaudit
 
 import "strings"
 
-const promptRecordMaxMessages = 30
+// promptRecordDefaultMaxMessages is used when no persisted max_messages setting
+// exists or the stored value is out of range.
+const promptRecordDefaultMaxMessages = 30
 
 // truncatePromptRecordMessages keeps only the newest messages in the retained
 // request document. The request itself may contain much more history, but a
