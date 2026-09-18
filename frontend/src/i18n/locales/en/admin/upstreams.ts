@@ -4,6 +4,11 @@ export default {
     eyebrow: 'Connections and credentials',
     description: 'Maintain relay credentials, inspect group ratios, and sync usable keys.',
     add: 'Add upstream',
+    searchPlaceholder: 'Search by name or URL...',
+    prevPage: 'Previous',
+    nextPage: 'Next',
+    pageInfo: 'Page {page} of {pages}',
+    totalCount: '{count} total',
     edit: 'Edit upstream',
     empty: 'No upstreams configured',
     emptyHint: 'Add an upstream relay to start managing credentials and keys',
@@ -60,6 +65,7 @@ export default {
     missingLogin: 'Enter login credentials or an existing access token',
     missingRemoteUserId: 'A user ID is required with a new-api access token',
     missingGroup: 'Select at least one local group',
+    loginFailed: 'Upstream login failed',
     requestFailed: 'Operation failed',
     lastChecked: 'Last checked',
     account: 'Account',
@@ -78,5 +84,17 @@ export default {
     keyCount: 'Loaded keys',
     expand: 'Expand',
     collapse: 'Collapse'
+    ,balanceNotifyTitle: 'Balance email notifications'
+    ,balanceNotifyHint: 'When enabled, all upstream balances are queried automatically every 30 seconds.'
+    ,notifyEmails: 'Notification emails'
+    ,emailPlaceholder: 'Enter an email address'
+    ,addEmail: 'Add email'
+    ,removeEmail: 'Remove'
+    ,balanceThreshold: 'Balance threshold'
+    ,balanceNotifyEnabled: 'Enable automatic checks and notifications'
+    ,saveBalanceSettings: 'Save settings'
+    ,refreshAllBalances: 'Query all balances'
+    ,balanceSettingsSaved: 'Balance notification settings saved'
+    ,allBalancesUpdated: 'All upstream balances queried'
   }
 }

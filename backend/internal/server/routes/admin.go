@@ -143,6 +143,9 @@ func registerUpstreamRoutes(admin *gin.RouterGroup, h *handler.Handlers) {
 	{
 		upstreams.GET("", h.Admin.Upstream.List)
 		upstreams.POST("", h.Admin.Upstream.Create)
+		upstreams.GET("/balance-notify-settings", h.Admin.Upstream.GetBalanceNotifySettings)
+		upstreams.PUT("/balance-notify-settings", h.Admin.Upstream.UpdateBalanceNotifySettings)
+		upstreams.POST("/balance/refresh-all", h.Admin.Upstream.RefreshAllBalances)
 		upstreams.GET("/:id", h.Admin.Upstream.GetByID)
 		upstreams.PUT("/:id", h.Admin.Upstream.Update)
 		upstreams.DELETE("/:id", h.Admin.Upstream.Delete)

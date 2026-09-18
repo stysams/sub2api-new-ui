@@ -20,6 +20,17 @@ func NewUpstreamHandler(upstreamService service.UpstreamService) *UpstreamHandle
 }
 
 func (h *UpstreamHandler) List(c *gin.Context) {
+	if c.Query("page") != "" {
+		page, pageSize := response.ParsePagination(c)
+		search := c.Query("search")
+		items, total, err := h.upstreamService.ListPaginated(c.Request.Context(), page, pageSize, search)
+		if err != nil {
+			response.ErrorFrom(c, err)
+			return
+		}
+		response.Paginated(c, items, total, page, pageSize)
+		return
+	}
 	items, err := h.upstreamService.List(c.Request.Context())
 	if err != nil {
 		response.ErrorFrom(c, err)
@@ -90,6 +101,37 @@ func (h *UpstreamHandler) RefreshBalance(c *gin.Context) {
 		return
 	}
 	result, err := h.upstreamService.RefreshBalance(c.Request.Context(), id)
+	if err != nil {
+		response.ErrorFrom(c, err)
+		return
+	}
+	response.Success(c, result)
+}
+
+func (h *UpstreamHandler) GetBalanceNotifySettings(c *gin.Context) {
+	result, err := h.upstreamService.GetBalanceNotifySettings(c.Request.Context())
+	if err != nil {
+		response.ErrorFrom(c, err)
+		return
+	}
+	response.Success(c, result)
+}
+
+func (h *UpstreamHandler) UpdateBalanceNotifySettings(c *gin.Context) {
+	var req service.UpstreamBalanceNotifySettings
+	if err := c.ShouldBindJSON(&req); err != nil {
+		response.BadRequest(c, "invalid request: "+err.Error())
+		return
+	}
+	if err := h.upstreamService.UpdateBalanceNotifySettings(c.Request.Context(), &req); err != nil {
+		response.ErrorFrom(c, err)
+		return
+	}
+	response.Success(c, &req)
+}
+
+func (h *UpstreamHandler) RefreshAllBalances(c *gin.Context) {
+	result, err := h.upstreamService.RefreshAllBalances(c.Request.Context())
 	if err != nil {
 		response.ErrorFrom(c, err)
 		return

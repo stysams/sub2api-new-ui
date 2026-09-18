@@ -51,6 +51,8 @@ type UpstreamResource struct {
 
 type UpstreamRepository interface {
 	List(context.Context) ([]*Upstream, error)
+	ListPaginated(ctx context.Context, page, pageSize int, search string) ([]*Upstream, int64, error)
+	CountResources(ctx context.Context) (map[int64]int, error)
 	GetByID(context.Context, int64) (*Upstream, error)
 	Create(context.Context, *Upstream) error
 	Update(context.Context, *Upstream) error
@@ -66,6 +68,7 @@ type UpstreamRepository interface {
 
 type UpstreamService interface {
 	List(context.Context) ([]*UpstreamView, error)
+	ListPaginated(ctx context.Context, page, pageSize int, search string) ([]*UpstreamListView, int64, error)
 	GetByID(context.Context, int64) (*UpstreamView, error)
 	Create(context.Context, *CreateUpstreamInput) (*UpstreamView, error)
 	Update(context.Context, int64, *UpdateUpstreamInput) (*UpstreamView, error)
@@ -78,11 +81,26 @@ type UpstreamService interface {
 	FetchModels(context.Context, int64, bool) ([]string, error)
 	ChatCompletion(context.Context, int64, map[string]any) (*http.Response, error)
 	SyncToAccount(context.Context, int64, []int64) (*UpstreamSyncResult, error)
+	GetBalanceNotifySettings(context.Context) (*UpstreamBalanceNotifySettings, error)
+	UpdateBalanceNotifySettings(context.Context, *UpstreamBalanceNotifySettings) error
+	RefreshAllBalances(context.Context) ([]*UpstreamView, error)
+}
+
+// UpstreamBalanceNotifySettings controls the optional periodic upstream balance probe.
+type UpstreamBalanceNotifySettings struct {
+	Enabled   bool     `json:"enabled"`
+	Threshold float64  `json:"threshold"`
+	Emails    []string `json:"emails"`
 }
 
 type UpstreamView struct {
 	Upstream
 	TokenMasked string `json:"token_masked,omitempty"`
+}
+
+type UpstreamListView struct {
+	UpstreamView
+	ResourceCount int `json:"resource_count"`
 }
 type UpstreamResourceView struct {
 	UpstreamResource

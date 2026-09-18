@@ -136,6 +136,65 @@ func (r *upstreamRepository) MarkResourceSynced(ctx context.Context, resourceID,
 	return err
 }
 
+func (r *upstreamRepository) ListPaginated(ctx context.Context, page, pageSize int, search string) ([]*service.Upstream, int64, error) {
+	whereClause := "WHERE deleted_at IS NULL"
+	args := []any{}
+	argIdx := 1
+
+	if search != "" {
+		whereClause += fmt.Sprintf(" AND (name ILIKE $%d OR base_url ILIKE $%d)", argIdx, argIdx)
+		args = append(args, "%"+search+"%")
+		argIdx++
+	}
+
+	var total int64
+	countQuery := "SELECT COUNT(*) FROM upstreams " + whereClause
+	if err := r.db.QueryRowContext(ctx, countQuery, args...).Scan(&total); err != nil {
+		return nil, 0, fmt.Errorf("upstream.listPaginated count: %w", err)
+	}
+
+	offset := (page - 1) * pageSize
+	selectQuery := fmt.Sprintf("%s %s ORDER BY sort_code, id LIMIT $%d OFFSET $%d",
+		upstreamSelect, whereClause, argIdx, argIdx+1)
+	selectArgs := append(args, pageSize, offset)
+
+	rows, err := r.db.QueryContext(ctx, selectQuery, selectArgs...)
+	if err != nil {
+		return nil, 0, fmt.Errorf("upstream.listPaginated: %w", err)
+	}
+	defer func() { _ = rows.Close() }()
+
+	var out []*service.Upstream
+	for rows.Next() {
+		item, err := scanUpstream(rows)
+		if err != nil {
+			return nil, 0, err
+		}
+		out = append(out, item)
+	}
+	return out, total, rows.Err()
+}
+
+func (r *upstreamRepository) CountResources(ctx context.Context) (map[int64]int, error) {
+	rows, err := r.db.QueryContext(ctx,
+		`SELECT upstream_id, COUNT(*) FROM upstream_resources WHERE deleted_at IS NULL GROUP BY upstream_id`)
+	if err != nil {
+		return nil, fmt.Errorf("upstream.countResources: %w", err)
+	}
+	defer func() { _ = rows.Close() }()
+
+	result := make(map[int64]int)
+	for rows.Next() {
+		var uid int64
+		var cnt int
+		if err := rows.Scan(&uid, &cnt); err != nil {
+			return nil, err
+		}
+		result[uid] = cnt
+	}
+	return result, rows.Err()
+}
+
 const upstreamSelect = `SELECT id,name,sort_code,kind,base_url,token_encrypted,COALESCE(refresh_token_encrypted,''),COALESCE(password_encrypted,''),token_expires_at,COALESCE(login_identifier,''),COALESCE(remote_user_id,''),balance_snapshot,group_snapshot,COALESCE(notes,''),enabled,last_checked_at,COALESCE(last_error,''),created_by,created_at,updated_at FROM upstreams`
 const resourceSelect = `SELECT id,upstream_id,resource_type,remote_id,COALESCE(name,''),COALESCE(group_name,''),key_encrypted,models_snapshot,models_fetched_at,synced_account_id,synced_rate_multiplier,synced_at,enabled,created_at,updated_at FROM upstream_resources`
 

@@ -7,9 +7,13 @@ import (
 	"errors"
 	"fmt"
 	"io"
+	"log/slog"
 	"net/http"
+	"regexp"
 	"strings"
 	"time"
+
+	infraerrors "github.com/Wei-Shaw/sub2api/internal/pkg/errors"
 
 	"github.com/Wei-Shaw/sub2api/internal/config"
 	"github.com/Wei-Shaw/sub2api/internal/domain"
@@ -22,14 +26,96 @@ var (
 )
 
 type adminUpstreamService struct {
-	repo      UpstreamRepository
-	admin     AdminService
-	encryptor SecretEncryptor
-	cfg       *config.Config
+	repo         UpstreamRepository
+	admin        AdminService
+	encryptor    SecretEncryptor
+	cfg          *config.Config
+	settingRepo  SettingRepository
+	emailService *EmailService
 }
 
-func NewAdminUpstreamService(repo UpstreamRepository, admin AdminService, encryptor SecretEncryptor, cfg *config.Config) UpstreamService {
-	return &adminUpstreamService{repo: repo, admin: admin, encryptor: encryptor, cfg: cfg}
+func NewAdminUpstreamService(repo UpstreamRepository, admin AdminService, encryptor SecretEncryptor, cfg *config.Config, deps ...any) UpstreamService {
+	s := &adminUpstreamService{repo: repo, admin: admin, encryptor: encryptor, cfg: cfg}
+	for _, dep := range deps {
+		if repo, ok := dep.(SettingRepository); ok {
+			s.settingRepo = repo
+		}
+		if email, ok := dep.(*EmailService); ok {
+			s.emailService = email
+		}
+	}
+	return s
+}
+
+func (s *adminUpstreamService) GetBalanceNotifySettings(ctx context.Context) (*UpstreamBalanceNotifySettings, error) {
+	result := &UpstreamBalanceNotifySettings{Emails: []string{}}
+	if s.settingRepo == nil {
+		return result, nil
+	}
+	raw, err := s.settingRepo.GetValue(ctx, SettingKeyUpstreamBalanceNotify)
+	if err != nil || strings.TrimSpace(raw) == "" {
+		return result, nil
+	}
+	if err := json.Unmarshal([]byte(raw), result); err != nil {
+		return nil, fmt.Errorf("parse upstream balance notify settings: %w", err)
+	}
+	if result.Threshold < 0 {
+		result.Threshold = 0
+	}
+	if result.Threshold > 100 {
+		result.Threshold = 100
+	}
+	return result, nil
+}
+
+func (s *adminUpstreamService) UpdateBalanceNotifySettings(ctx context.Context, settings *UpstreamBalanceNotifySettings) error {
+	if s.settingRepo == nil {
+		return errors.New("setting repository is unavailable")
+	}
+	if settings == nil {
+		return errors.New("settings cannot be nil")
+	}
+	if settings.Threshold < 0 || settings.Threshold > 100 {
+		return fmt.Errorf("threshold must be between 0 and 100")
+	}
+	emailPattern := regexp.MustCompile(`^[^@\s]+@[^@\s]+\.[^@\s]+$`)
+	seen := map[string]bool{}
+	clean := make([]string, 0, len(settings.Emails))
+	for _, email := range settings.Emails {
+		email = strings.TrimSpace(email)
+		if email == "" || !emailPattern.MatchString(email) {
+			return fmt.Errorf("invalid notification email")
+		}
+		key := strings.ToLower(email)
+		if !seen[key] {
+			seen[key] = true
+			clean = append(clean, email)
+		}
+	}
+	settings.Emails = clean
+	data, err := json.Marshal(settings)
+	if err != nil {
+		return err
+	}
+	return s.settingRepo.Set(ctx, SettingKeyUpstreamBalanceNotify, string(data))
+}
+
+func (s *adminUpstreamService) RefreshAllBalances(ctx context.Context) ([]*UpstreamView, error) {
+	items, err := s.repo.List(ctx)
+	if err != nil {
+		return nil, err
+	}
+	result := make([]*UpstreamView, 0, len(items))
+	for _, item := range items {
+		if _, err := s.RefreshBalance(ctx, item.ID); err != nil {
+			continue
+		}
+		view, err := s.GetByID(ctx, item.ID)
+		if err == nil {
+			result = append(result, view)
+		}
+	}
+	return result, nil
 }
 
 func (s *adminUpstreamService) List(ctx context.Context) ([]*UpstreamView, error) {
@@ -46,6 +132,23 @@ func (s *adminUpstreamService) List(ctx context.Context) ([]*UpstreamView, error
 		result = append(result, view)
 	}
 	return result, nil
+}
+
+func (s *adminUpstreamService) ListPaginated(ctx context.Context, page, pageSize int, search string) ([]*UpstreamListView, int64, error) {
+	items, total, err := s.repo.ListPaginated(ctx, page, pageSize, search)
+	if err != nil {
+		return nil, 0, err
+	}
+	resourceCounts, _ := s.repo.CountResources(ctx)
+	result := make([]*UpstreamListView, 0, len(items))
+	for _, item := range items {
+		v, err := s.view(item)
+		if err != nil {
+			return nil, 0, err
+		}
+		result = append(result, &UpstreamListView{UpstreamView: *v, ResourceCount: resourceCounts[item.ID]})
+	}
+	return result, total, nil
 }
 
 func (s *adminUpstreamService) GetByID(ctx context.Context, id int64) (*UpstreamView, error) {
@@ -176,7 +279,51 @@ func (s *adminUpstreamService) RefreshBalance(ctx context.Context, id int64) (*U
 	if err := s.repo.SaveBalance(ctx, id, *usage, now, nil); err != nil {
 		return nil, err
 	}
+	s.notifyLowBalance(ctx, u, *usage)
 	return s.GetByID(ctx, id)
+}
+
+func (s *adminUpstreamService) notifyLowBalance(ctx context.Context, upstream *Upstream, snapshot domain.UpstreamBalanceSnapshot) {
+	if s.emailService == nil || s.settingRepo == nil || upstream == nil {
+		return
+	}
+	settings, err := s.GetBalanceNotifySettings(ctx)
+	if err != nil || !settings.Enabled || settings.Threshold <= 0 || len(settings.Emails) == 0 {
+		return
+	}
+	remaining := 0.0
+	if snapshot.Remaining != nil {
+		remaining = *snapshot.Remaining
+	}
+	if snapshot.Remaining == nil && snapshot.Quota > 0 {
+		remaining = snapshot.Quota - snapshot.UsedQuota
+		if remaining < 0 {
+			remaining = 0
+		}
+	}
+	previous := 0.0
+	if upstream.BalanceSnapshot.Remaining != nil {
+		previous = *upstream.BalanceSnapshot.Remaining
+	}
+	if upstream.BalanceSnapshot.Remaining == nil && upstream.BalanceSnapshot.Quota > 0 {
+		previous = upstream.BalanceSnapshot.Quota - upstream.BalanceSnapshot.UsedQuota
+	}
+	if remaining >= settings.Threshold || previous < settings.Threshold {
+		return
+	}
+	for _, recipient := range settings.Emails {
+		to := strings.TrimSpace(recipient)
+		if to == "" {
+			continue
+		}
+		sendCtx, cancel := context.WithTimeout(context.Background(), emailSendTimeout)
+		subject := fmt.Sprintf("[%s] 上游余额不足提醒", sanitizeEmailHeader(upstream.Name))
+		body := fmt.Sprintf("上游 %s 的余额已低于通知阈值。\\n\\n当前余额：%.2f\\n通知阈值：%.2f\\n查询时间：%s", upstream.Name, remaining, settings.Threshold, time.Now().UTC().Format(time.RFC3339))
+		if err := s.emailService.SendEmail(sendCtx, to, subject, body); err != nil {
+			slog.Warn("upstream balance notification failed", "upstream_id", upstream.ID, "recipient", to, "error", err)
+		}
+		cancel()
+	}
 }
 
 func (s *adminUpstreamService) FetchGroups(ctx context.Context, id int64, refresh bool) ([]domain.UpstreamGroupItem, error) {
@@ -517,7 +664,10 @@ func (s *adminUpstreamService) accessAndClient(ctx context.Context, u *Upstream)
 			return nil, nil, fmt.Errorf("decrypt upstream credential: %w", decryptErr)
 		}
 	}
-	if u.Kind == domain.UpstreamKindNewAPI && (token == "" || (u.TokenExpiresAt != nil && time.Until(*u.TokenExpiresAt) < 5*time.Minute)) {
+	// Do not proactively log in based on the locally stored expiry timestamp.
+	// The upstream is authoritative: reuse the current token until an actual
+	// information request reports that authentication has failed.
+	if u.Kind == domain.UpstreamKindNewAPI && token == "" {
 		login, loginErr := s.loginWithStoredPassword(ctx, u)
 		if loginErr != nil {
 			if token == "" {
@@ -530,7 +680,7 @@ func (s *adminUpstreamService) accessAndClient(ctx context.Context, u *Upstream)
 			token = login.AccessToken
 		}
 	}
-	if u.Kind == domain.UpstreamKindSub2API && (token == "" || (u.TokenExpiresAt != nil && time.Until(*u.TokenExpiresAt) < 5*time.Minute)) {
+	if u.Kind == domain.UpstreamKindSub2API && token == "" {
 		var login *UpstreamLogin
 		var loginErr error
 		if u.RefreshTokenEncrypted != "" {
@@ -567,25 +717,30 @@ func (s *adminUpstreamService) accessAndClient(ctx context.Context, u *Upstream)
 	return &UpstreamAccess{BaseURL: u.BaseURL, Kind: u.Kind, AccessToken: token, UserID: u.RemoteUserID}, client, nil
 }
 
-// withUpstreamAccess retries one upstream operation after a New API
-// authentication failure. Newer New API releases expire access tokens
-// independently of the local record, while older releases keep the same
-// login shape; refreshing only on HTTP 401 preserves both behaviours.
+// withUpstreamAccess retries one upstream operation only after the upstream
+// reports an authentication failure. Local expiry metadata is not treated as
+// authoritative because many upstreams keep tokens valid beyond that value.
 func (s *adminUpstreamService) withUpstreamAccess(ctx context.Context, u *Upstream, operation func(*UpstreamAccess, UpstreamClient) error) error {
 	access, client, err := s.accessAndClient(ctx, u)
 	if err != nil {
 		return err
 	}
 	err = operation(access, client)
-	if u.Kind != domain.UpstreamKindNewAPI || !isUpstreamAuthError(err) {
+	if !isUpstreamAuthError(err) {
 		return err
 	}
 
-	login, loginErr := s.loginWithStoredPassword(ctx, u)
+	login, loginErr := s.reauthenticate(ctx, u)
 	if loginErr != nil {
-		return fmt.Errorf("upstream authentication expired; re-login failed: %w (original error: %v)", loginErr, err)
+		return fmt.Errorf("upstream authentication expired; re-authentication failed: %w (original error: %v)", loginErr, err)
 	}
-	if applyErr := s.applyNewAPILogin(ctx, u, login); applyErr != nil {
+	var applyErr error
+	if u.Kind == domain.UpstreamKindNewAPI {
+		applyErr = s.applyNewAPILogin(ctx, u, login)
+	} else {
+		applyErr = s.applySub2APILogin(ctx, u, login)
+	}
+	if applyErr != nil {
 		return fmt.Errorf("refresh upstream authentication: %w", applyErr)
 	}
 	access, client, err = s.accessAndClient(ctx, u)
@@ -593,6 +748,18 @@ func (s *adminUpstreamService) withUpstreamAccess(ctx context.Context, u *Upstre
 		return err
 	}
 	return operation(access, client)
+}
+
+func (s *adminUpstreamService) reauthenticate(ctx context.Context, u *Upstream) (*UpstreamLogin, error) {
+	if u.Kind == domain.UpstreamKindSub2API && u.RefreshTokenEncrypted != "" {
+		refresh, err := s.encryptor.Decrypt(u.RefreshTokenEncrypted)
+		if err == nil && strings.TrimSpace(refresh) != "" {
+			if login, refreshErr := refreshSub2API(ctx, u.BaseURL, refresh, s.cfg); refreshErr == nil && login != nil && login.AccessToken != "" {
+				return login, nil
+			}
+		}
+	}
+	return s.loginWithStoredPassword(ctx, u)
 }
 
 func isUpstreamAuthError(err error) bool {
@@ -714,6 +881,28 @@ func loginSub2API(ctx context.Context, baseURL, email, password string, cfg *con
 	return doSub2Login(ctx, client, baseURL, "/api/v1/auth/login", map[string]any{"email": email, "password": password})
 }
 
+// extractUpstreamLoginErrorMessage 从上游 JSON 响应体中提取可读的错误消息。
+// 兼容 New API / Sub2API 等多种响应格式（message / data.message / error 字段）。
+func extractUpstreamLoginErrorMessage(body []byte) string {
+	var obj map[string]interface{}
+	if err := json.Unmarshal(body, &obj); err != nil {
+		return ""
+	}
+	// 优先级: message > data.message > error
+	if msg, ok := obj["message"].(string); ok && strings.TrimSpace(msg) != "" {
+		return strings.TrimSpace(msg)
+	}
+	if data, ok := obj["data"].(map[string]interface{}); ok {
+		if msg, ok := data["message"].(string); ok && strings.TrimSpace(msg) != "" {
+			return strings.TrimSpace(msg)
+		}
+	}
+	if msg, ok := obj["error"].(string); ok && strings.TrimSpace(msg) != "" {
+		return strings.TrimSpace(msg)
+	}
+	return ""
+}
+
 func loginNewAPI(ctx context.Context, baseURL, identifier, password string, cfg *config.Config) (*UpstreamLogin, error) {
 	client, err := newUpstreamHTTPClient(cfg.Security.URLAllowlist.Enabled, cfg.Security.URLAllowlist.AllowPrivateHosts)
 	if err != nil {
@@ -735,7 +924,11 @@ func loginNewAPI(ctx context.Context, baseURL, identifier, password string, cfg 
 		return nil, err
 	}
 	if loginResponse.StatusCode < 200 || loginResponse.StatusCode >= 300 {
-		return nil, fmt.Errorf("new-api login returned HTTP %d", loginResponse.StatusCode)
+		upstreamMsg := extractUpstreamLoginErrorMessage(loginPayload)
+		if upstreamMsg != "" {
+			return nil, infraerrors.Errorf(loginResponse.StatusCode, "LOGIN_FAILED", "%s", upstreamMsg)
+		}
+		return nil, infraerrors.Errorf(loginResponse.StatusCode, "LOGIN_FAILED", "new-api login returned HTTP %d", loginResponse.StatusCode)
 	}
 	var loginEnvelope struct {
 		Success *bool  `json:"success"`
@@ -753,7 +946,7 @@ func loginNewAPI(ctx context.Context, baseURL, identifier, password string, cfg 
 		return nil, fmt.Errorf("decode new-api login: %w", err)
 	}
 	if loginEnvelope.Success != nil && !*loginEnvelope.Success {
-		return nil, fmt.Errorf("new-api login failed: %s", strings.TrimSpace(loginEnvelope.Message))
+		return nil, infraerrors.Errorf(400, "LOGIN_FAILED", "%s", strings.TrimSpace(loginEnvelope.Message))
 	}
 	userID := stringify(loginEnvelope.Data.User.ID)
 	if userID == "" {
@@ -784,7 +977,11 @@ func loginNewAPI(ctx context.Context, baseURL, identifier, password string, cfg 
 		return nil, err
 	}
 	if tokenResponse.StatusCode < 200 || tokenResponse.StatusCode >= 300 {
-		return nil, fmt.Errorf("new-api access token returned HTTP %d", tokenResponse.StatusCode)
+		upstreamMsg := extractUpstreamLoginErrorMessage(tokenPayload)
+		if upstreamMsg != "" {
+			return nil, infraerrors.Errorf(tokenResponse.StatusCode, "LOGIN_FAILED", "%s", upstreamMsg)
+		}
+		return nil, infraerrors.Errorf(tokenResponse.StatusCode, "LOGIN_FAILED", "new-api access token returned HTTP %d", tokenResponse.StatusCode)
 	}
 	var tokenEnvelope struct {
 		Success *bool  `json:"success"`
@@ -823,7 +1020,14 @@ func doSub2Login(ctx context.Context, client *http.Client, baseURL, path string,
 		return nil, readErr
 	}
 	if resp.StatusCode < 200 || resp.StatusCode >= 300 {
-		return nil, fmt.Errorf("sub2api login returned HTTP %d: %s", resp.StatusCode, strings.TrimSpace(string(payload)))
+		upstreamMsg := extractUpstreamLoginErrorMessage(payload)
+		if upstreamMsg == "" {
+			upstreamMsg = strings.TrimSpace(string(payload))
+		}
+		if upstreamMsg != "" {
+			return nil, infraerrors.Errorf(resp.StatusCode, "LOGIN_FAILED", "%s", upstreamMsg)
+		}
+		return nil, infraerrors.Errorf(resp.StatusCode, "LOGIN_FAILED", "sub2api login returned HTTP %d", resp.StatusCode)
 	}
 	var envelope struct {
 		Data struct {
@@ -836,7 +1040,7 @@ func doSub2Login(ctx context.Context, client *http.Client, baseURL, path string,
 		ExpiresIn    int    `json:"expires_in"`
 	}
 	if err := json.Unmarshal(payload, &envelope); err != nil {
-		return nil, fmt.Errorf("decode sub2api login: %w", err)
+		return nil, infraerrors.Errorf(400, "LOGIN_FAILED", "decode sub2api login: %v", err)
 	}
 	login := &UpstreamLogin{AccessToken: envelope.Data.AccessToken, RefreshToken: envelope.Data.RefreshToken, ExpiresIn: envelope.Data.ExpiresIn}
 	if login.AccessToken == "" {

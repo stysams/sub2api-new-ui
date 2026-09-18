@@ -34,6 +34,7 @@ export interface Upstream {
   created_at: string
   updated_at: string
   token_masked?: string
+  resource_count?: number
 }
 
 export interface UpstreamResource {

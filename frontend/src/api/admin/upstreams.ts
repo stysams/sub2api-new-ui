@@ -7,6 +7,31 @@ import type {
   UpstreamSyncResult
 } from '@/types'
 
+export interface UpstreamListParams {
+  page?: number
+  page_size?: number
+  search?: string
+}
+
+export interface PaginatedResponse<T> {
+  items: T[]
+  total: number
+  page: number
+  page_size: number
+  pages: number
+}
+
+export interface UpstreamBalanceNotifySettings {
+  enabled: boolean
+  threshold: number
+  emails: string[]
+}
+
+export async function listPaginated(params: UpstreamListParams = {}): Promise<PaginatedResponse<Upstream>> {
+  const { data } = await apiClient.get<PaginatedResponse<Upstream>>('/admin/upstreams', { params })
+  return data
+}
+
 export async function list(): Promise<Upstream[]> {
   const { data } = await apiClient.get<Upstream[]>('/admin/upstreams')
   return data
@@ -41,6 +66,21 @@ export async function refreshBalance(id: number): Promise<Upstream> {
   return data
 }
 
+export async function getBalanceNotifySettings(): Promise<UpstreamBalanceNotifySettings> {
+  const { data } = await apiClient.get<UpstreamBalanceNotifySettings>('/admin/upstreams/balance-notify-settings')
+  return data
+}
+
+export async function updateBalanceNotifySettings(input: UpstreamBalanceNotifySettings): Promise<UpstreamBalanceNotifySettings> {
+  const { data } = await apiClient.put<UpstreamBalanceNotifySettings>('/admin/upstreams/balance-notify-settings', input)
+  return data
+}
+
+export async function refreshAllBalances(): Promise<Upstream[]> {
+  const { data } = await apiClient.post<Upstream[]>('/admin/upstreams/balance/refresh-all')
+  return data
+}
+
 export async function groups(id: number, refresh = false): Promise<UpstreamGroupItem[]> {
   const { data } = await apiClient.get<UpstreamGroupItem[]>(`/admin/upstreams/${id}/groups`, {
     params: refresh ? { refresh: true } : undefined
@@ -72,12 +112,16 @@ export async function syncToAccount(resourceId: number, groupIds: number[]): Pro
 
 export default {
   list,
+  listPaginated,
   getById,
   create,
   update,
   remove,
   test,
   refreshBalance,
+  getBalanceNotifySettings,
+  updateBalanceNotifySettings,
+  refreshAllBalances,
   groups,
   resources,
   createKey,

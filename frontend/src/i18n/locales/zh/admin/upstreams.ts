@@ -4,6 +4,11 @@ export default {
     eyebrow: '连接与凭据',
     description: '维护中转站凭据，查看分组倍率并同步可用密钥。',
     add: '添加上游',
+    searchPlaceholder: '搜索上游名称或地址...',
+    prevPage: '上一页',
+    nextPage: '下一页',
+    pageInfo: '第 {page} 页，共 {pages} 页',
+    totalCount: '共 {count} 个',
     edit: '编辑上游',
     empty: '还没有配置上游',
     emptyHint: '添加一个上游中转站，开始管理凭据和密钥',
@@ -60,6 +65,7 @@ export default {
     missingLogin: '请填写登录账号和密码，或填写已有访问令牌',
     missingRemoteUserId: '使用 new-api 访问令牌时需要填写用户编号',
     missingGroup: '请选择至少一个本地分组',
+    loginFailed: '登录上游失败',
     requestFailed: '操作失败',
     lastChecked: '最近检查',
     account: '账号',
@@ -78,5 +84,17 @@ export default {
     keyCount: '已加载密钥',
     expand: '展开',
     collapse: '收起'
+    ,balanceNotifyTitle: '余额邮件通知'
+    ,balanceNotifyHint: '开启后每三十秒自动查询一次所有上游余额。关闭后不会自动查询。'
+    ,notifyEmails: '通知邮箱'
+    ,emailPlaceholder: '请输入邮箱地址'
+    ,addEmail: '添加邮箱'
+    ,removeEmail: '移除'
+    ,balanceThreshold: '余额通知阈值'
+    ,balanceNotifyEnabled: '开启自动查询与通知'
+    ,saveBalanceSettings: '保存配置'
+    ,refreshAllBalances: '一键查询所有余额'
+    ,balanceSettingsSaved: '余额通知配置已保存'
+    ,allBalancesUpdated: '所有上游余额查询完成'
   }
 }

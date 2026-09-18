@@ -17,16 +17,64 @@
             {{ t('admin.upstreams.description') }}
           </p>
         </div>
-        <button type="button" class="btn btn-primary shrink-0 self-start sm:self-auto" @click="openCreate">
-          <Icon name="plus" size="sm" class="mr-1.5" />
-          {{ t('admin.upstreams.add') }}
-        </button>
+        <div class="flex items-center gap-3 self-start sm:self-auto">
+          <div class="relative">
+            <Icon name="search" size="sm" class="pointer-events-none absolute left-3 top-1/2 -translate-y-1/2 text-gray-400" />
+            <input
+              v-model="searchQuery"
+              type="text"
+              class="input pl-9 w-64"
+              :placeholder="t('admin.upstreams.searchPlaceholder')"
+              @input="onSearchInput"
+            />
+          </div>
+          <button type="button" class="btn btn-primary shrink-0" @click="openCreate">
+            <Icon name="plus" size="sm" class="mr-1.5" />
+            {{ t('admin.upstreams.add') }}
+          </button>
+        </div>
       </div>
+
+      <section class="card space-y-4 border border-primary-100 bg-primary-50/40 dark:border-primary-900/40 dark:bg-primary-950/20">
+        <div class="flex flex-col gap-3 lg:flex-row lg:items-start lg:justify-between">
+          <div>
+            <h2 class="font-medium text-gray-900 dark:text-white">{{ t('admin.upstreams.balanceNotifyTitle') }}</h2>
+            <p class="mt-1 text-xs text-gray-500 dark:text-gray-400">{{ t('admin.upstreams.balanceNotifyHint') }}</p>
+          </div>
+          <button type="button" class="btn btn-primary btn-sm" :disabled="refreshAllBusy" @click="refreshAllBalances">
+            <Icon name="refresh" size="sm" class="mr-1" :class="refreshAllBusy ? 'animate-spin' : ''" />
+            {{ t('admin.upstreams.refreshAllBalances') }}
+          </button>
+        </div>
+        <div class="grid gap-4 lg:grid-cols-[minmax(0,1fr)_180px_180px_auto] lg:items-end">
+          <div>
+            <label class="input-label">{{ t('admin.upstreams.notifyEmails') }}</label>
+            <div class="space-y-2">
+              <div v-for="(_, index) in balanceSettings.emails" :key="index" class="flex gap-2">
+                <input v-model.trim="balanceSettings.emails[index]" class="input" type="email" :placeholder="t('admin.upstreams.emailPlaceholder')" />
+                <button type="button" class="btn btn-secondary btn-sm" @click="removeNotifyEmail(index)">{{ t('admin.upstreams.removeEmail') }}</button>
+              </div>
+              <button type="button" class="btn btn-secondary btn-sm" @click="addNotifyEmail">{{ t('admin.upstreams.addEmail') }}</button>
+            </div>
+          </div>
+          <div>
+            <label class="input-label">{{ t('admin.upstreams.balanceThreshold') }}</label>
+            <input v-model.number="balanceSettings.threshold" class="input" type="number" min="0" max="100" step="0.01" />
+          </div>
+          <label class="flex items-center gap-2 pb-2 text-sm text-gray-700 dark:text-gray-300">
+            <input v-model="balanceSettings.enabled" type="checkbox" />
+            {{ t('admin.upstreams.balanceNotifyEnabled') }}
+          </label>
+          <button type="button" class="btn btn-secondary" :disabled="balanceSettingsSaving" @click="saveBalanceSettings">
+            {{ balanceSettingsSaving ? t('common.saving') : t('admin.upstreams.saveBalanceSettings') }}
+          </button>
+        </div>
+      </section>
 
       <div v-if="!loading && upstreams.length" class="grid gap-3 sm:grid-cols-3">
         <div class="rounded-lg border border-gray-200 bg-white px-4 py-3 shadow-sm dark:border-dark-700 dark:bg-dark-800">
           <span class="block text-xs font-medium text-gray-500 dark:text-gray-400">{{ t('admin.upstreams.total') }}</span>
-          <strong class="mt-1 block text-xl font-semibold text-gray-900 dark:text-white">{{ upstreams.length }}</strong>
+          <strong class="mt-1 block text-xl font-semibold text-gray-900 dark:text-white">{{ totalUpstreams }}</strong>
         </div>
         <div class="rounded-lg border border-gray-200 bg-white px-4 py-3 shadow-sm dark:border-dark-700 dark:bg-dark-800">
           <span class="block text-xs font-medium text-gray-500 dark:text-gray-400">{{ t('admin.upstreams.active') }}</span>
@@ -201,7 +249,7 @@
                     type="button"
                     class="btn btn-ghost btn-sm"
                     :disabled="detailBusy === upstream.id"
-                    @click="loadDetails(upstream, true)"
+                    @click="loadGroups(upstream, true)"
                   >
                     <Icon name="refresh" size="sm" class="mr-1" />
                     {{ t('admin.upstreams.refreshGroups') }}
@@ -406,6 +454,13 @@
                   </div>
                 </div>
 
+                <div
+                  v-else-if="resourceLoadingIds.has(upstream.id)"
+                  class="flex items-center justify-center py-5 text-sm text-gray-500 dark:text-gray-400"
+                >
+                  <Icon name="refresh" size="sm" class="mr-2 animate-spin" />
+                  {{ t('common.loading') }}
+                </div>
                 <p
                   v-else
                   class="py-5 text-center text-sm text-gray-500 dark:text-gray-400"
@@ -416,6 +471,37 @@
             </div>
           </div>
         </section>
+      </div>
+
+      <!-- Pagination -->
+      <div
+        v-if="!loading && totalPages > 1"
+        class="flex items-center justify-between rounded-lg border border-gray-200 bg-white px-4 py-3 shadow-sm dark:border-dark-700 dark:bg-dark-800"
+      >
+        <span class="text-sm text-gray-500 dark:text-gray-400">
+          {{ t('admin.upstreams.totalCount', { count: totalUpstreams }) }}
+        </span>
+        <div class="flex items-center gap-2">
+          <button
+            type="button"
+            class="btn btn-secondary btn-sm"
+            :disabled="currentPage <= 1"
+            @click="goToPage(currentPage - 1)"
+          >
+            {{ t('admin.upstreams.prevPage') }}
+          </button>
+          <span class="text-sm text-gray-700 dark:text-gray-300">
+            {{ t('admin.upstreams.pageInfo', { page: currentPage, pages: totalPages }) }}
+          </span>
+          <button
+            type="button"
+            class="btn btn-secondary btn-sm"
+            :disabled="currentPage >= totalPages"
+            @click="goToPage(currentPage + 1)"
+          >
+            {{ t('admin.upstreams.nextPage') }}
+          </button>
+        </div>
       </div>
     </div>
 
@@ -775,7 +861,7 @@
 </template>
 
 <script setup lang="ts">
-import { computed, nextTick, onBeforeUnmount, onMounted, reactive, ref } from 'vue'
+import { computed, nextTick, onBeforeUnmount, onMounted, reactive, ref, watch } from 'vue'
 import { useI18n } from 'vue-i18n'
 import BaseDialog from '@/components/common/BaseDialog.vue'
 import ConfirmDialog from '@/components/common/ConfirmDialog.vue'
@@ -802,14 +888,25 @@ const upstreams = ref<Upstream[]>([])
 const groupsByUpstream = ref<Record<number, UpstreamGroupItem[]>>({})
 const resourcesByUpstream = ref<Record<number, UpstreamResource[]>>({})
 const expanded = ref(new Set<number>())
+const totalUpstreams = ref(0)
+const currentPage = ref(1)
+const pageSize = ref(20)
+const totalPages = ref(1)
+const searchQuery = ref('')
+let searchTimer: ReturnType<typeof setTimeout> | null = null
 const loading = ref(false)
 const saving = ref(false)
 const busyId = ref<number | null>(null)
 const balanceBusyId = ref<number | null>(null)
 const detailBusy = ref<number | null>(null)
+const resourceLoadingIds = ref(new Set<number>())
+const balanceSettings = reactive({ enabled: false, threshold: 0, emails: [] as string[] })
+const balanceSettingsSaving = ref(false)
+const refreshAllBusy = ref(false)
+let balanceTimer: ReturnType<typeof setInterval> | null = null
 
 const activeUpstreamCount = computed(() => upstreams.value.filter((upstream) => upstream.enabled).length)
-const resourceCount = computed(() => Object.values(resourcesByUpstream.value).reduce((total, resources) => total + resources.length, 0))
+const resourceCount = computed(() => upstreams.value.reduce((sum, u) => sum + (u.resource_count ?? 0), 0))
 const protocolOptions = computed(() => [
   { value: 'newapi', label: t('admin.upstreams.newapi') },
   { value: 'sub2api', label: t('admin.upstreams.sub2api') }
@@ -997,7 +1094,13 @@ function dateLabel(value: string | undefined) {
 
 function errorMessage(error: unknown): string {
   if (error && typeof error === 'object' && 'message' in error) {
-    return String((error as { message?: unknown }).message)
+    const err = error as Record<string, unknown>
+    const msg = String(err.message)
+    // Surface upstream login error reason for clearer feedback
+    if (err.reason === 'LOGIN_FAILED') {
+      return `${t('admin.upstreams.loginFailed')}: ${msg}`
+    }
+    return msg
   }
   return t('admin.upstreams.requestFailed')
 }
@@ -1007,7 +1110,14 @@ function errorMessage(error: unknown): string {
 async function load() {
   loading.value = true
   try {
-    upstreams.value = await adminAPI.upstreams.list()
+    const result = await adminAPI.upstreams.listPaginated({
+      page: currentPage.value,
+      page_size: pageSize.value,
+      search: searchQuery.value || undefined
+    })
+    upstreams.value = result.items
+    totalUpstreams.value = result.total
+    totalPages.value = result.pages
   } catch (error) {
     appStore.showError(errorMessage(error))
   } finally {
@@ -1015,20 +1125,65 @@ async function load() {
   }
 }
 
-async function loadDetails(upstream: Upstream, refresh = false) {
+async function loadBalanceSettings() {
+  try {
+    const result = await adminAPI.upstreams.getBalanceNotifySettings()
+    balanceSettings.enabled = result.enabled
+    balanceSettings.threshold = result.threshold
+    balanceSettings.emails = [...(result.emails || [])]
+  } catch (error) { appStore.showError(errorMessage(error)) }
+}
+
+function addNotifyEmail() { balanceSettings.emails.push('') }
+function removeNotifyEmail(index: number) { balanceSettings.emails.splice(index, 1) }
+
+async function saveBalanceSettings() {
+  balanceSettings.threshold = Math.min(100, Math.max(0, Number(balanceSettings.threshold) || 0))
+  balanceSettings.emails = balanceSettings.emails.map(email => email.trim()).filter(Boolean)
+  balanceSettingsSaving.value = true
+  try {
+    const result = await adminAPI.upstreams.updateBalanceNotifySettings({ ...balanceSettings, emails: [...balanceSettings.emails] })
+    balanceSettings.emails = [...result.emails]
+    appStore.showSuccess(t('admin.upstreams.balanceSettingsSaved'))
+    resetBalanceTimer()
+  } catch (error) { appStore.showError(errorMessage(error)) } finally { balanceSettingsSaving.value = false }
+}
+
+async function refreshAllBalances() {
+  refreshAllBusy.value = true
+  try {
+    const updated = await adminAPI.upstreams.refreshAllBalances()
+    for (const item of updated) { const index = upstreams.value.findIndex(current => current.id === item.id); if (index >= 0) upstreams.value[index] = item }
+    appStore.showSuccess(t('admin.upstreams.allBalancesUpdated'))
+  } catch (error) { appStore.showError(errorMessage(error)) } finally { refreshAllBusy.value = false }
+}
+
+function resetBalanceTimer() {
+  if (balanceTimer) { clearInterval(balanceTimer); balanceTimer = null }
+  if (balanceSettings.enabled) balanceTimer = setInterval(() => { void refreshAllBalances() }, 30000)
+}
+
+function goToPage(page: number) {
+  if (page < 1 || page > totalPages.value || page === currentPage.value) return
+  currentPage.value = page
+  load()
+}
+
+function onSearchInput() {
+  if (searchTimer) clearTimeout(searchTimer)
+  searchTimer = setTimeout(() => {
+    currentPage.value = 1
+    load()
+  }, 300)
+}
+
+async function loadGroups(upstream: Upstream, refresh = false) {
   detailBusy.value = upstream.id
   try {
-    const [groups, resources] = await Promise.all([
-      adminAPI.upstreams.groups(upstream.id, refresh),
-      adminAPI.upstreams.resources(upstream.id)
-    ])
+    const groups = await adminAPI.upstreams.groups(upstream.id, refresh)
     groupsByUpstream.value = {
       ...groupsByUpstream.value,
       [upstream.id]: groups
-    }
-    resourcesByUpstream.value = {
-      ...resourcesByUpstream.value,
-      [upstream.id]: resources
     }
   } catch (error) {
     appStore.showError(errorMessage(error))
@@ -1037,13 +1192,48 @@ async function loadDetails(upstream: Upstream, refresh = false) {
   }
 }
 
+async function loadResources(upstream: Upstream) {
+  const ids = new Set(resourceLoadingIds.value)
+  ids.add(upstream.id)
+  resourceLoadingIds.value = ids
+  try {
+    const resources = await adminAPI.upstreams.resources(upstream.id)
+    resourcesByUpstream.value = {
+      ...resourcesByUpstream.value,
+      [upstream.id]: resources
+    }
+  } catch (error) {
+    appStore.showError(errorMessage(error))
+  } finally {
+    const done = new Set(resourceLoadingIds.value)
+    done.delete(upstream.id)
+    resourceLoadingIds.value = done
+  }
+}
+
+async function loadDetails(upstream: Upstream, refresh = false) {
+  await loadGroups(upstream, refresh)
+  await loadResources(upstream)
+}
+
+
 async function toggleExpanded(upstream: Upstream) {
   const next = new Set(expanded.value)
   if (next.has(upstream.id)) {
     next.delete(upstream.id)
   } else {
     next.add(upstream.id)
-    await loadDetails(upstream)
+    // Load groups and resources in parallel on first expand
+    const promises: Promise<void>[] = []
+    if (!groupsByUpstream.value[upstream.id]) {
+      promises.push(loadGroups(upstream))
+    }
+    if (!resourcesByUpstream.value[upstream.id]) {
+      promises.push(loadResources(upstream))
+    }
+    if (promises.length) {
+      await Promise.all(promises)
+    }
   }
   expanded.value = next
 }
@@ -1280,12 +1470,16 @@ async function handleSendChat() {
 
 onMounted(() => {
   load()
+  loadBalanceSettings()
   window.addEventListener('resize', repositionOpenMenus)
   window.addEventListener('scroll', repositionOpenMenus, true)
 })
 
+watch(() => balanceSettings.enabled, resetBalanceTimer)
+
 onBeforeUnmount(() => {
   window.removeEventListener('resize', repositionOpenMenus)
   window.removeEventListener('scroll', repositionOpenMenus, true)
+  if (balanceTimer) clearInterval(balanceTimer)
 })
 </script>
