@@ -63,6 +63,7 @@ type UpstreamRepository interface {
 	SaveGroups(context.Context, int64, domain.UpstreamGroupSnapshot, time.Time) error
 	SaveBalance(context.Context, int64, domain.UpstreamBalanceSnapshot, time.Time, error) error
 	SaveModels(context.Context, int64, []string, time.Time) error
+	UpdateResourceKey(context.Context, int64, string) error
 	MarkResourceSynced(context.Context, int64, int64, float64, time.Time) error
 }
 
@@ -113,6 +114,7 @@ type CreateUpstreamInput struct {
 	Kind            string `json:"kind" binding:"required"`
 	BaseURL         string `json:"base_url" binding:"required"`
 	Token           string `json:"token"`
+	RefreshToken    string `json:"refresh_token"`
 	LoginIdentifier string `json:"login_identifier"`
 	RemoteUserID    string `json:"remote_user_id"`
 	Password        string `json:"password"`
@@ -126,6 +128,7 @@ type UpdateUpstreamInput struct {
 	Kind            string `json:"kind" binding:"required"`
 	BaseURL         string `json:"base_url" binding:"required"`
 	Token           string `json:"token"`
+	RefreshToken    string `json:"refresh_token"`
 	LoginIdentifier string `json:"login_identifier"`
 	RemoteUserID    string `json:"remote_user_id"`
 	Password        string `json:"password"`

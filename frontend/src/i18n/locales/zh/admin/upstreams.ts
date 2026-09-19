@@ -17,6 +17,8 @@ export default {
     kind: '协议',
     baseUrl: '站点地址',
     token: '访问令牌',
+    refreshToken: '刷新令牌',
+    refreshTokenHint: '已有访问令牌时将优先直接使用，不会再次触发登录的人机验证。',
     identifier: '登录邮箱',
     loginAccount: '登录账号',
     remoteUserId: '用户编号',

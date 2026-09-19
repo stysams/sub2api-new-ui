@@ -160,7 +160,7 @@ func (s *adminUpstreamService) GetByID(ctx context.Context, id int64) (*Upstream
 }
 
 func (s *adminUpstreamService) Create(ctx context.Context, input *CreateUpstreamInput) (*UpstreamView, error) {
-	u, err := s.buildUpstream(ctx, input.Name, input.SortCode, input.Kind, input.BaseURL, input.Token, input.LoginIdentifier, input.RemoteUserID, input.Password, input.Notes, input.Enabled, 0)
+	u, err := s.buildUpstream(ctx, input.Name, input.SortCode, input.Kind, input.BaseURL, input.Token, input.RefreshToken, input.LoginIdentifier, input.RemoteUserID, input.Password, input.Notes, input.Enabled, 0)
 	if err != nil {
 		return nil, err
 	}
@@ -183,7 +183,7 @@ func (s *adminUpstreamService) Update(ctx context.Context, id int64, input *Upda
 	// An empty credential field means "keep the existing credential" on edit.
 	// This is required for password-based Sub2API entries because the list API
 	// never sends either the password or the access token back to the browser.
-	if strings.TrimSpace(input.Token) == "" && strings.TrimSpace(input.Password) == "" {
+	if strings.TrimSpace(input.Token) == "" && strings.TrimSpace(input.RefreshToken) == "" && strings.TrimSpace(input.Password) == "" {
 		if strings.TrimSpace(input.Name) == "" {
 			return nil, fmt.Errorf("upstream name is required")
 		}
@@ -224,7 +224,7 @@ func (s *adminUpstreamService) Update(ctx context.Context, id int64, input *Upda
 		}
 		return s.GetByID(ctx, id)
 	}
-	u, err := s.buildUpstream(ctx, input.Name, input.SortCode, input.Kind, input.BaseURL, input.Token, input.LoginIdentifier, input.RemoteUserID, input.Password, input.Notes, input.Enabled, existing.CreatedBy)
+	u, err := s.buildUpstream(ctx, input.Name, input.SortCode, input.Kind, input.BaseURL, input.Token, input.RefreshToken, input.LoginIdentifier, input.RemoteUserID, input.Password, input.Notes, input.Enabled, existing.CreatedBy)
 	if err != nil {
 		return nil, err
 	}
@@ -232,6 +232,9 @@ func (s *adminUpstreamService) Update(ctx context.Context, id int64, input *Upda
 	u.CreatedAt, u.UpdatedAt = existing.CreatedAt, existing.UpdatedAt
 	if input.Password == "" && input.Kind == existing.Kind {
 		u.PasswordEncrypted = existing.PasswordEncrypted
+	}
+	if input.RefreshToken == "" && input.Kind == existing.Kind {
+		u.RefreshTokenEncrypted = existing.RefreshTokenEncrypted
 	}
 	if u.RemoteUserID == "" && input.Kind == existing.Kind {
 		u.RemoteUserID = existing.RemoteUserID
@@ -445,7 +448,32 @@ func (s *adminUpstreamService) FetchModels(ctx context.Context, resourceID int64
 	}
 	var models []string
 	err = s.withUpstreamAccess(ctx, u, func(access *UpstreamAccess, client UpstreamClient) error {
-		var fetchErr error
+		fetchErr := func() error {
+			var err error
+			models, err = client.FetchModels(ctx, access, secret)
+			return err
+		}()
+		if fetchErr == nil || u.Kind != domain.UpstreamKindNewAPI || !isUpstreamAuthError(fetchErr) {
+			return fetchErr
+		}
+		// NewAPI resource keys can expire independently from the user token.
+		// Re-issue the key with the valid user token, persist it, then retry.
+		refreshedKey, keyErr := client.FetchKeySecret(ctx, access, resource.RemoteID)
+		if keyErr != nil {
+			return fetchErr
+		}
+		refreshedKey = strings.TrimSpace(refreshedKey)
+		if refreshedKey == "" {
+			return fetchErr
+		}
+		encryptedKey, encryptErr := s.encryptor.Encrypt(refreshedKey)
+		if encryptErr != nil {
+			return encryptErr
+		}
+		if updateErr := s.repo.UpdateResourceKey(ctx, resourceID, encryptedKey); updateErr != nil {
+			return updateErr
+		}
+		secret = refreshedKey
 		models, fetchErr = client.FetchModels(ctx, access, secret)
 		return fetchErr
 	})
@@ -559,7 +587,7 @@ func (s *adminUpstreamService) SyncToAccount(ctx context.Context, resourceID int
 	return result, nil
 }
 
-func (s *adminUpstreamService) buildUpstream(ctx context.Context, name string, sortCode int, kind, baseURL, token, identifier, remoteUserID, password, notes string, enabled *bool, createdBy int64) (*Upstream, error) {
+func (s *adminUpstreamService) buildUpstream(ctx context.Context, name string, sortCode int, kind, baseURL, token, refreshToken, identifier, remoteUserID, password, notes string, enabled *bool, createdBy int64) (*Upstream, error) {
 	if strings.TrimSpace(name) == "" {
 		return nil, fmt.Errorf("upstream name is required")
 	}
@@ -572,10 +600,52 @@ func (s *adminUpstreamService) buildUpstream(ctx context.Context, name string, s
 	}
 	u := &Upstream{Name: strings.TrimSpace(name), SortCode: sortCode, Kind: kind, BaseURL: normalized, LoginIdentifier: strings.TrimSpace(identifier), RemoteUserID: strings.TrimSpace(remoteUserID), Notes: notes, Enabled: enabled == nil || *enabled, CreatedBy: createdBy, BalanceSnapshot: domain.UpstreamBalanceSnapshot{}, GroupSnapshot: domain.UpstreamGroupSnapshot{Items: []domain.UpstreamGroupItem{}}}
 	if kind == domain.UpstreamKindSub2API {
-		if password == "" && token == "" {
+		if password == "" && token == "" && refreshToken == "" {
 			return nil, fmt.Errorf("sub2api requires login credentials")
 		}
-		if password != "" {
+		// Prefer caller-supplied access/refresh tokens. This avoids replaying the
+		// password login flow (and any interactive CAPTCHA) when a valid session
+		// was already established in the upstream web UI.
+		if token != "" {
+			u.TokenEncrypted, err = s.encryptor.Encrypt(strings.TrimSpace(token))
+			if err != nil {
+				return nil, err
+			}
+			if refreshToken != "" {
+				u.RefreshTokenEncrypted, err = s.encryptor.Encrypt(strings.TrimSpace(refreshToken))
+				if err != nil {
+					return nil, err
+				}
+			}
+			if password != "" {
+				u.PasswordEncrypted, err = s.encryptor.Encrypt(password)
+				if err != nil {
+					return nil, err
+				}
+			}
+		} else if refreshToken != "" {
+			// A refresh token alone is sufficient to bootstrap a fresh access token.
+			login, refreshErr := refreshSub2API(ctx, normalized, strings.TrimSpace(refreshToken), s.cfg)
+			if refreshErr != nil {
+				return nil, refreshErr
+			}
+			u.TokenEncrypted, err = s.encryptor.Encrypt(login.AccessToken)
+			if err != nil {
+				return nil, err
+			}
+			rotatedRefreshToken := strings.TrimSpace(login.RefreshToken)
+			if rotatedRefreshToken == "" {
+				rotatedRefreshToken = strings.TrimSpace(refreshToken)
+			}
+			u.RefreshTokenEncrypted, err = s.encryptor.Encrypt(rotatedRefreshToken)
+			if err != nil {
+				return nil, err
+			}
+			if login.ExpiresIn > 0 {
+				expires := time.Now().UTC().Add(time.Duration(login.ExpiresIn) * time.Second)
+				u.TokenExpiresAt = &expires
+			}
+		} else if password != "" {
 			u.PasswordEncrypted, err = s.encryptor.Encrypt(password)
 			if err != nil {
 				return nil, err
@@ -594,8 +664,6 @@ func (s *adminUpstreamService) buildUpstream(ctx context.Context, name string, s
 			}
 			expires := time.Now().UTC().Add(time.Duration(login.ExpiresIn) * time.Second)
 			u.TokenExpiresAt = &expires
-		} else {
-			u.TokenEncrypted, err = s.encryptor.Encrypt(token)
 		}
 	} else {
 		if password != "" {

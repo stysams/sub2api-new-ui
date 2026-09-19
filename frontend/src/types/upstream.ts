@@ -59,6 +59,7 @@ export interface UpstreamInput {
   kind: string
   base_url: string
   token?: string
+  refresh_token?: string
   login_identifier?: string
   remote_user_id?: string
   password?: string

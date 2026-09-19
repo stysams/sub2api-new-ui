@@ -131,6 +131,11 @@ func (r *upstreamRepository) SaveModels(ctx context.Context, id int64, models []
 	return err
 }
 
+func (r *upstreamRepository) UpdateResourceKey(ctx context.Context, id int64, keyEncrypted string) error {
+	_, err := r.db.ExecContext(ctx, `UPDATE upstream_resources SET key_encrypted=$1, updated_at=NOW() WHERE id=$2 AND deleted_at IS NULL`, keyEncrypted, id)
+	return err
+}
+
 func (r *upstreamRepository) MarkResourceSynced(ctx context.Context, resourceID, accountID int64, rate float64, syncedAt time.Time) error {
 	_, err := r.db.ExecContext(ctx, `UPDATE upstream_resources SET synced_account_id=$1, synced_rate_multiplier=$2, synced_at=$3, updated_at=NOW() WHERE id=$4 AND deleted_at IS NULL`, accountID, rate, syncedAt, resourceID)
 	return err

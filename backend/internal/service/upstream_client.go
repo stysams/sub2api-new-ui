@@ -7,6 +7,7 @@ import (
 	"fmt"
 	"io"
 	"net/http"
+	"os"
 	"strconv"
 	"strings"
 	"time"
@@ -63,6 +64,24 @@ type upstreamHTTPError struct {
 
 func (e *upstreamHTTPError) Error() string {
 	return fmt.Sprintf("upstream returned HTTP %d: %s", e.StatusCode, e.Body)
+}
+
+// HTTPStatusCode exposes the upstream response status to the HTTP response
+// layer without exporting the concrete service error type.
+func (e *upstreamHTTPError) HTTPStatusCode() int {
+	if e == nil {
+		return http.StatusBadGateway
+	}
+	return e.StatusCode
+}
+
+// HTTPPublicMessage returns a bounded, non-sensitive summary for admin APIs.
+// The raw upstream body remains available only to server-side redacted logs.
+func (e *upstreamHTTPError) HTTPPublicMessage() string {
+	if e == nil {
+		return "upstream request failed"
+	}
+	return fmt.Sprintf("upstream returned HTTP %d", e.StatusCode)
 }
 
 func NewUpstreamClient(kind string, client *http.Client) (UpstreamClient, error) {
@@ -524,5 +543,25 @@ func profileValue(profile map[string]any, keys ...string) any {
 }
 
 func newUpstreamHTTPClient(cfgValidate, allowPrivate bool) (*http.Client, error) {
-	return httpclient.GetClient(httpclient.Options{Timeout: 20 * time.Second, ResponseHeaderTimeout: 15 * time.Second, ValidateResolvedIP: cfgValidate, AllowPrivateHosts: allowPrivate})
+	return httpclient.GetClient(httpclient.Options{
+		ProxyURL:              upstreamEnvironmentProxyURL(),
+		Timeout:               20 * time.Second,
+		ResponseHeaderTimeout: 15 * time.Second,
+		ValidateResolvedIP:    cfgValidate,
+		AllowPrivateHosts:     allowPrivate,
+	})
+}
+
+// upstreamEnvironmentProxyURL keeps admin upstream probes compatible with
+// deployments that expose outbound access through the conventional proxy
+// environment variables. Explicit application proxy settings remain owned by
+// the caller; this fallback is only used when the upstream client has no
+// dedicated proxy option.
+func upstreamEnvironmentProxyURL() string {
+	for _, key := range []string{"HTTPS_PROXY", "https_proxy", "HTTP_PROXY", "http_proxy", "ALL_PROXY", "all_proxy"} {
+		if value := strings.TrimSpace(os.Getenv(key)); value != "" {
+			return value
+		}
+	}
+	return ""
 }

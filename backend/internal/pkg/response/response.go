@@ -2,6 +2,7 @@
 package response
 
 import (
+	stderrors "errors"
 	"log"
 	"math"
 	"net/http"
@@ -82,6 +83,22 @@ func ErrorWithDetails(c *gin.Context, statusCode int, message, reason string, me
 func ErrorFrom(c *gin.Context, err error) bool {
 	if err == nil {
 		return false
+	}
+
+	// Preserve HTTP failures returned by upstream integrations. These errors
+	// intentionally expose only a bounded public summary; the raw response is
+	// retained for redacted server-side diagnostics.
+	var httpErr interface {
+		HTTPStatusCode() int
+		HTTPPublicMessage() string
+	}
+	if stderrors.As(err, &httpErr) {
+		statusCode := httpErr.HTTPStatusCode()
+		if statusCode < 400 || statusCode > 599 {
+			statusCode = http.StatusBadGateway
+		}
+		Error(c, statusCode, httpErr.HTTPPublicMessage())
+		return true
 	}
 
 	statusCode, status := infraerrors.ToHTTP(err)

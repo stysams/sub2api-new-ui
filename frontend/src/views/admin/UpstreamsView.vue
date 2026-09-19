@@ -584,6 +584,20 @@
           />
         </div>
 
+        <div v-if="form.kind === 'sub2api'">
+          <label class="input-label">
+            {{ t('admin.upstreams.refreshToken') }}
+            <span class="ml-1 font-normal text-gray-400">{{ t('common.optional') }}</span>
+          </label>
+          <input
+            v-model="form.refresh_token"
+            class="input"
+            type="password"
+            autocomplete="new-password"
+          />
+          <p class="mt-1 text-xs text-gray-500 dark:text-gray-400">{{ t('admin.upstreams.refreshTokenHint') }}</p>
+        </div>
+
         <div v-if="form.kind === 'newapi'">
           <label class="input-label">{{ t('admin.upstreams.remoteUserId') }}</label>
           <input
@@ -931,6 +945,7 @@ const form = reactive<UpstreamInput>({
   kind: 'newapi',
   base_url: '',
   token: '',
+  refresh_token: '',
   login_identifier: '',
   remote_user_id: '',
   password: '',
@@ -974,6 +989,7 @@ function resetForm() {
     kind: 'newapi',
     base_url: '',
     token: '',
+    refresh_token: '',
     login_identifier: '',
     remote_user_id: '',
     password: '',
@@ -1259,6 +1275,7 @@ function openEdit(upstream: Upstream) {
     kind: upstream.kind,
     base_url: upstream.base_url,
     token: '',
+    refresh_token: '',
     login_identifier: upstream.login_identifier || '',
     remote_user_id: upstream.remote_user_id || '',
     password: '',
@@ -1275,7 +1292,7 @@ async function submitForm() {
     appStore.showError(t('admin.upstreams.missingForm'))
     return
   }
-  if (!editingId.value && !form.token && (!form.login_identifier || !form.password)) {
+  if (!editingId.value && !form.token && !form.refresh_token && (!form.login_identifier || !form.password)) {
     appStore.showError(t('admin.upstreams.missingLogin'))
     return
   }

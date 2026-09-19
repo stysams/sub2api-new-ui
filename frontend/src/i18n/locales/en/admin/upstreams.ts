@@ -17,6 +17,8 @@ export default {
     kind: 'Protocol',
     baseUrl: 'Site URL',
     token: 'Access token',
+    refreshToken: 'Refresh token',
+    refreshTokenHint: 'When an access token is provided, it is used first and the interactive login challenge is skipped.',
     identifier: 'Login email',
     loginAccount: 'Login account',
     remoteUserId: 'User ID',
