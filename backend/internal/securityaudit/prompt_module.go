@@ -2,6 +2,12 @@ package securityaudit
 
 import "github.com/google/wire"
 
+// ProvideCoordinator makes the PromptService's recorder role explicit to Wire;
+// NewCoordinator keeps a variadic parameter for callers that do not record.
+func ProvideCoordinator(legacy LegacyEngine, prompt *PromptService) *Coordinator {
+	return NewCoordinator(legacy, prompt, prompt)
+}
+
 var ProviderSet = wire.NewSet(
 	NewPostgreSQLRepository,
 	wire.Bind(new(JobRepository), new(*PostgreSQLRepository)),
@@ -18,6 +24,6 @@ var ProviderSet = wire.NewSet(
 	wire.Bind(new(PromptEngine), new(*PromptService)),
 	wire.Bind(new(PromptAdminService), new(*PromptService)),
 	NewLegacyModerationAdapter,
-	NewCoordinator,
+	ProvideCoordinator,
 	NewPromptAdminHandler,
 )
