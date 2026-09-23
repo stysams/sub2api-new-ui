@@ -1,88 +1,131 @@
 <template>
   <AppLayout>
-    <div class="mx-auto max-w-7xl space-y-6 p-4 sm:p-6 lg:space-y-7">
-      <!-- Page Header -->
-      <div
-        class="flex flex-col gap-5 border-b border-gray-200 pb-6 sm:flex-row sm:items-end sm:justify-between dark:border-dark-700"
-      >
-        <div class="min-w-0">
-          <div class="mb-2 flex items-center gap-2 text-xs font-medium uppercase text-primary-600 dark:text-primary-400">
-            <Icon name="cloud" size="sm" />
-            {{ t('admin.upstreams.eyebrow') }}
-          </div>
-          <h1 class="text-2xl font-semibold leading-tight text-gray-900 dark:text-white sm:text-3xl">
-            {{ t('admin.upstreams.title') }}
-          </h1>
-          <p class="mt-2 max-w-2xl text-sm leading-6 text-gray-500 dark:text-gray-400">
-            {{ t('admin.upstreams.description') }}
-          </p>
+    <div class="mx-auto max-w-7xl space-y-3 p-4 sm:p-5 lg:space-y-4">
+      <div class="flex items-center justify-end gap-2">
+        <div class="relative min-w-0 flex-1 sm:flex-none">
+          <Icon name="search" size="sm" class="pointer-events-none absolute left-3 top-1/2 -translate-y-1/2 text-gray-400" />
+          <input
+            v-model="searchQuery"
+            type="text"
+            class="input w-full pl-9 sm:w-64"
+            :placeholder="t('admin.upstreams.searchPlaceholder')"
+            @input="onSearchInput"
+          />
         </div>
-        <div class="flex items-center gap-3 self-start sm:self-auto">
-          <div class="relative">
-            <Icon name="search" size="sm" class="pointer-events-none absolute left-3 top-1/2 -translate-y-1/2 text-gray-400" />
-            <input
-              v-model="searchQuery"
-              type="text"
-              class="input pl-9 w-64"
-              :placeholder="t('admin.upstreams.searchPlaceholder')"
-              @input="onSearchInput"
-            />
-          </div>
-          <button type="button" class="btn btn-primary shrink-0" @click="openCreate">
-            <Icon name="plus" size="sm" class="mr-1.5" />
-            {{ t('admin.upstreams.add') }}
-          </button>
-        </div>
+        <button type="button" class="btn btn-primary shrink-0" @click="openCreate">
+          <Icon name="plus" size="sm" class="mr-1.5" />
+          {{ t('admin.upstreams.add') }}
+        </button>
       </div>
 
-      <section class="card space-y-4 border border-primary-100 bg-primary-50/40 dark:border-primary-900/40 dark:bg-primary-950/20">
-        <div class="flex flex-col gap-3 lg:flex-row lg:items-start lg:justify-between">
-          <div>
-            <h2 class="font-medium text-gray-900 dark:text-white">{{ t('admin.upstreams.balanceNotifyTitle') }}</h2>
-            <p class="mt-1 text-xs text-gray-500 dark:text-gray-400">{{ t('admin.upstreams.balanceNotifyHint') }}</p>
-          </div>
-          <button type="button" class="btn btn-primary btn-sm" :disabled="refreshAllBusy" @click="refreshAllBalances">
-            <Icon name="refresh" size="sm" class="mr-1" :class="refreshAllBusy ? 'animate-spin' : ''" />
-            {{ t('admin.upstreams.refreshAllBalances') }}
-          </button>
-        </div>
-        <div class="grid gap-4 lg:grid-cols-[minmax(0,1fr)_180px_180px_auto] lg:items-end">
-          <div>
-            <label class="input-label">{{ t('admin.upstreams.notifyEmails') }}</label>
-            <div class="space-y-2">
-              <div v-for="(_, index) in balanceSettings.emails" :key="index" class="flex gap-2">
-                <input v-model.trim="balanceSettings.emails[index]" class="input" type="email" :placeholder="t('admin.upstreams.emailPlaceholder')" />
-                <button type="button" class="btn btn-secondary btn-sm" @click="removeNotifyEmail(index)">{{ t('admin.upstreams.removeEmail') }}</button>
-              </div>
-              <button type="button" class="btn btn-secondary btn-sm" @click="addNotifyEmail">{{ t('admin.upstreams.addEmail') }}</button>
+      <section
+        class="card overflow-hidden border border-primary-100/80 bg-gradient-to-r from-primary-50/80 via-white to-blue-50/50 p-3 dark:border-primary-900/40 dark:from-primary-950/30 dark:via-dark-800/50 dark:to-blue-950/20 sm:px-4"
+      >
+        <div class="flex flex-col gap-2 xl:flex-row xl:items-center xl:justify-between">
+          <div class="flex min-w-0 flex-1 items-center gap-3">
+            <span
+              class="flex h-8 w-8 shrink-0 items-center justify-center rounded-lg bg-primary-100 text-primary-600 dark:bg-primary-900/40 dark:text-primary-400"
+            >
+              <Icon name="bell" size="sm" />
+            </span>
+            <div class="min-w-0">
+              <h2 class="text-sm font-semibold text-gray-900 dark:text-white">
+                {{ t('admin.upstreams.balanceNotifyTitle') }}
+              </h2>
+              <p class="truncate text-xs text-gray-500 dark:text-gray-400">
+                {{ t('admin.upstreams.balanceNotifyHint') }}
+              </p>
             </div>
+            <button
+              type="button"
+              role="switch"
+              :aria-checked="balanceSettings.enabled"
+              :class="['switch ml-1 shrink-0', balanceSettings.enabled ? 'switch-active' : '']"
+              :title="t('admin.upstreams.balanceNotifyEnabled')"
+              :aria-label="t('admin.upstreams.balanceNotifyEnabled')"
+              @click="balanceSettings.enabled = !balanceSettings.enabled"
+            >
+              <span class="switch-thumb" />
+            </button>
           </div>
-          <div>
-            <label class="input-label">{{ t('admin.upstreams.balanceThreshold') }}</label>
-            <input v-model.number="balanceSettings.threshold" class="input" type="number" min="0" max="100" step="0.01" />
+          <div class="flex flex-wrap items-center gap-2">
+            <label
+              class="flex items-center gap-2 rounded-lg bg-white/70 px-2.5 py-1.5 text-xs text-gray-500 ring-1 ring-gray-200 dark:bg-dark-800/60 dark:text-gray-400 dark:ring-dark-600"
+            >
+              {{ t('admin.upstreams.balanceThreshold') }}
+              <input
+                v-model.number="balanceSettings.threshold"
+                type="number"
+                min="0"
+                max="100"
+                step="0.01"
+                class="w-16 bg-transparent text-right text-sm font-medium text-gray-800 focus:outline-none dark:text-gray-100"
+              />
+            </label>
+            <button type="button" class="btn btn-secondary btn-sm" :disabled="refreshAllBusy" @click="refreshAllBalances">
+              <Icon name="refresh" size="sm" class="mr-1" :class="refreshAllBusy ? 'animate-spin' : ''" />
+              {{ t('admin.upstreams.refreshAllBalances') }}
+            </button>
+            <button type="button" class="btn btn-primary btn-sm" :disabled="balanceSettingsSaving" @click="saveBalanceSettings">
+              {{ balanceSettingsSaving ? t('common.saving') : t('admin.upstreams.saveBalanceSettings') }}
+            </button>
           </div>
-          <label class="flex items-center gap-2 pb-2 text-sm text-gray-700 dark:text-gray-300">
-            <input v-model="balanceSettings.enabled" type="checkbox" />
-            {{ t('admin.upstreams.balanceNotifyEnabled') }}
-          </label>
-          <button type="button" class="btn btn-secondary" :disabled="balanceSettingsSaving" @click="saveBalanceSettings">
-            {{ balanceSettingsSaving ? t('common.saving') : t('admin.upstreams.saveBalanceSettings') }}
-          </button>
+        </div>
+        <div class="mt-2 flex flex-wrap items-center gap-1.5 border-t border-primary-100/70 pt-2 dark:border-primary-900/30">
+          <Icon name="mail" size="xs" class="mr-0.5 shrink-0 text-gray-400" />
+          <span
+            v-for="(email, index) in balanceSettings.emails"
+            :key="index"
+            class="inline-flex items-center gap-1 rounded-full bg-white py-1 pl-2.5 pr-1.5 text-xs text-gray-700 ring-1 ring-primary-100 dark:bg-dark-800 dark:text-gray-300 dark:ring-primary-900/40"
+          >
+            {{ email }}
+            <button
+              type="button"
+              class="flex h-4 w-4 items-center justify-center rounded-full text-gray-400 transition-colors hover:bg-red-50 hover:text-red-500 dark:hover:bg-red-900/30"
+              :title="t('admin.upstreams.removeEmail')"
+              :aria-label="t('admin.upstreams.removeEmail')"
+              @click="removeNotifyEmail(index)"
+            >
+              <Icon name="x" size="xs" />
+            </button>
+          </span>
+          <input
+            v-model="newNotifyEmail"
+            type="email"
+            class="h-7 w-44 rounded-full border border-dashed border-gray-300 bg-transparent px-2.5 text-xs text-gray-700 transition-colors placeholder:text-gray-400 focus:border-primary-400 focus:outline-none dark:border-dark-600 dark:text-gray-200 dark:focus:border-primary-500"
+            :placeholder="t('admin.upstreams.emailPlaceholder')"
+            @keydown.enter.prevent="addNotifyEmailFromInput"
+          />
         </div>
       </section>
 
-      <div v-if="!loading && upstreams.length" class="grid gap-3 sm:grid-cols-3">
-        <div class="rounded-lg border border-gray-200 bg-white px-4 py-3 shadow-sm dark:border-dark-700 dark:bg-dark-800">
-          <span class="block text-xs font-medium text-gray-500 dark:text-gray-400">{{ t('admin.upstreams.total') }}</span>
-          <strong class="mt-1 block text-xl font-semibold text-gray-900 dark:text-white">{{ totalUpstreams }}</strong>
+      <div v-if="!loading && upstreams.length" class="grid grid-cols-3 gap-2 sm:gap-3">
+        <div class="stat-card card-hover items-center gap-2 p-2.5 sm:gap-3 sm:p-3">
+          <div class="stat-icon hidden h-8 w-8 shrink-0 rounded-lg bg-gradient-to-br from-primary-500 to-blue-600 text-white shadow-md shadow-primary-500/20 sm:flex sm:h-9 sm:w-9">
+            <Icon name="cloud" size="lg" />
+          </div>
+          <div class="min-w-0">
+            <span class="stat-label text-xs">{{ t('admin.upstreams.total') }}</span>
+            <strong class="stat-value block text-lg leading-tight">{{ totalUpstreams }}</strong>
+          </div>
         </div>
-        <div class="rounded-lg border border-gray-200 bg-white px-4 py-3 shadow-sm dark:border-dark-700 dark:bg-dark-800">
-          <span class="block text-xs font-medium text-gray-500 dark:text-gray-400">{{ t('admin.upstreams.active') }}</span>
-          <strong class="mt-1 block text-xl font-semibold text-green-700 dark:text-green-400">{{ activeUpstreamCount }}</strong>
+        <div class="stat-card card-hover items-center gap-2 p-2.5 sm:gap-3 sm:p-3">
+          <div class="stat-icon hidden h-8 w-8 shrink-0 rounded-lg bg-gradient-to-br from-emerald-500 to-teal-600 text-white shadow-md shadow-emerald-500/20 sm:flex sm:h-9 sm:w-9">
+            <Icon name="bolt" size="lg" />
+          </div>
+          <div class="min-w-0">
+            <span class="stat-label text-xs">{{ t('admin.upstreams.active') }}</span>
+            <strong class="stat-value block text-lg leading-tight text-emerald-600 dark:text-emerald-400">{{ activeUpstreamCount }}</strong>
+          </div>
         </div>
-        <div class="rounded-lg border border-gray-200 bg-white px-4 py-3 shadow-sm dark:border-dark-700 dark:bg-dark-800">
-          <span class="block text-xs font-medium text-gray-500 dark:text-gray-400">{{ t('admin.upstreams.keyCount') }}</span>
-          <strong class="mt-1 block text-xl font-semibold text-primary-700 dark:text-primary-300">{{ resourceCount }}</strong>
+        <div class="stat-card card-hover items-center gap-2 p-2.5 sm:gap-3 sm:p-3">
+          <div class="stat-icon hidden h-8 w-8 shrink-0 rounded-lg bg-gradient-to-br from-violet-500 to-purple-600 text-white shadow-md shadow-violet-500/20 sm:flex sm:h-9 sm:w-9">
+            <Icon name="key" size="lg" />
+          </div>
+          <div class="min-w-0">
+            <span class="stat-label text-xs">{{ t('admin.upstreams.keyCount') }}</span>
+            <strong class="stat-value block text-lg leading-tight text-violet-600 dark:text-violet-400">{{ resourceCount }}</strong>
+          </div>
         </div>
       </div>
 
@@ -100,7 +143,11 @@
         v-else-if="upstreams.length === 0"
         class="card border border-dashed border-gray-300 py-16 text-center shadow-sm dark:border-dark-600"
       >
-        <Icon name="cloud" size="xl" class="mx-auto mb-3 text-gray-300 dark:text-dark-500" />
+        <span
+          class="mx-auto mb-4 flex h-16 w-16 items-center justify-center rounded-2xl bg-gradient-to-br from-primary-100 to-blue-100 text-primary-500 dark:from-primary-900/30 dark:to-blue-900/20 dark:text-primary-400"
+        >
+          <Icon name="cloud" size="xl" />
+        </span>
         <p class="text-sm font-medium text-gray-700 dark:text-gray-300">
           {{ t('admin.upstreams.empty') }}
         </p>
@@ -118,56 +165,82 @@
         <section
           v-for="upstream in upstreams"
           :key="upstream.id"
-          class="card overflow-hidden p-0 shadow-sm transition-shadow hover:shadow-md"
+          class="card card-hover overflow-hidden p-0"
         >
           <!-- Card Header -->
-          <div class="flex flex-col gap-4 p-5 xl:flex-row xl:items-center xl:justify-between sm:p-6">
+          <div class="flex flex-col gap-3 p-4 sm:p-5 xl:flex-row xl:items-center xl:justify-between">
             <button
               type="button"
-              class="flex min-w-0 items-start gap-3 text-left"
+              class="flex min-w-0 flex-1 items-center gap-3.5 text-left"
               :aria-expanded="expanded.has(upstream.id)"
               :aria-label="`${expanded.has(upstream.id) ? t('admin.upstreams.collapse') : t('admin.upstreams.expand')} ${upstream.name}`"
               @click="toggleExpanded(upstream)"
             >
-              <Icon
-                :name="expanded.has(upstream.id) ? 'chevronDown' : 'chevronRight'"
-                size="md"
-                class="mt-0.5 shrink-0 text-gray-400"
-              />
+              <span class="relative shrink-0">
+                <span
+                  :class="[
+                    'flex h-11 w-11 items-center justify-center rounded-xl text-white shadow-lg',
+                    kindTileClass(upstream.kind)
+                  ]"
+                >
+                  <Icon :name="upstream.kind === 'sub2api' ? 'cloud' : 'server'" size="md" />
+                </span>
+                <span
+                  :class="[
+                    'absolute -right-0.5 -top-0.5 h-3 w-3 rounded-full ring-2 ring-white dark:ring-dark-800',
+                    upstream.enabled ? 'bg-emerald-500' : 'bg-gray-300 dark:bg-dark-500'
+                  ]"
+                />
+              </span>
               <span class="min-w-0">
-                <span class="flex flex-wrap items-center gap-2">
-                  <span class="truncate font-medium text-gray-900 dark:text-white">
+                <span class="flex flex-wrap items-center gap-x-2 gap-y-1">
+                  <span class="truncate text-[15px] font-semibold text-gray-900 dark:text-white">
                     {{ upstream.name }}
                   </span>
-                  <span class="badge badge-gray">{{ kindLabel(upstream.kind) }}</span>
-                  <span
-                    :class="[
-                      'badge',
-                      upstream.enabled ? 'badge-green' : 'badge-gray'
-                    ]"
-                  >
+                  <span :class="['badge', kindBadgeClass(upstream.kind)]">{{ kindLabel(upstream.kind) }}</span>
+                  <span :class="['badge', upstream.enabled ? 'badge-success' : 'badge-gray']">
                     {{ upstream.enabled ? t('common.enabled') : t('common.disabled') }}
                   </span>
+                  <span v-if="upstream.resource_count" class="badge badge-gray">
+                    <Icon name="key" size="xs" />
+                    {{ upstream.resource_count }}
+                  </span>
                 </span>
-                <span class="mt-1 block truncate text-xs text-gray-500 dark:text-gray-400">
-                  {{ upstream.base_url }}
+                <span class="mt-1 flex items-center gap-1.5 text-xs text-gray-500 dark:text-gray-400">
+                  <Icon name="link" size="xs" class="shrink-0 text-gray-400" />
+                  <span class="truncate font-mono">{{ upstream.base_url }}</span>
                 </span>
               </span>
+              <Icon
+                name="chevronDown"
+                size="md"
+                class="ml-auto shrink-0 text-gray-300 transition-transform duration-200 dark:text-dark-500"
+                :class="expanded.has(upstream.id) ? 'rotate-180' : ''"
+              />
             </button>
 
             <!-- Card Actions -->
             <div class="flex flex-wrap items-center gap-2 xl:justify-end">
-              <div class="flex min-w-[210px] items-center gap-2 rounded-lg bg-gray-50 px-3 py-2 dark:bg-dark-800">
-                <span
-                  class="inline-flex items-center gap-1 text-xs text-gray-500 dark:text-gray-400"
-                  :title="upstream.balance_snapshot?.fetched_at ? dateLabel(upstream.balance_snapshot.fetched_at) : undefined"
-                >
-                  <Icon name="clock" size="xs" />
-                  {{ freshnessLabel(upstream) }}
-                </span>
+              <div
+                class="flex items-center gap-2.5 rounded-xl bg-gradient-to-r from-emerald-50 to-teal-50 py-1.5 pl-3 pr-2 ring-1 ring-emerald-100 dark:from-emerald-950/40 dark:to-teal-950/30 dark:ring-emerald-900/40"
+                :title="upstream.balance_snapshot?.fetched_at ? dateLabel(upstream.balance_snapshot.fetched_at) : undefined"
+              >
+                <div class="leading-tight">
+                  <div class="flex items-center gap-1 text-[11px] font-medium text-emerald-600/80 dark:text-emerald-400/70">
+                    <Icon name="clock" size="xs" />
+                    {{ freshnessLabel(upstream) }}
+                  </div>
+                  <div class="mt-0.5 flex items-baseline gap-1 whitespace-nowrap">
+                    <span class="text-[11px] text-emerald-600/70 dark:text-emerald-400/60">{{ t('admin.upstreams.remaining') }}</span>
+                    <strong class="text-lg font-bold tabular-nums text-emerald-700 dark:text-emerald-300">
+                      {{ remainingLabel(upstream) }}
+                    </strong>
+                    <span class="text-[11px] font-medium text-emerald-600/70 dark:text-emerald-400/60">{{ currencyLabel(upstream) }}</span>
+                  </div>
+                </div>
                 <button
                   type="button"
-                  class="inline-flex min-h-8 min-w-8 items-center justify-center rounded-md text-gray-500 transition-colors hover:bg-white hover:text-primary-600 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-primary-500/30 disabled:cursor-not-allowed disabled:opacity-50 dark:hover:bg-dark-700 dark:hover:text-primary-400"
+                  class="flex h-8 w-8 shrink-0 items-center justify-center rounded-lg text-emerald-600/70 transition-colors hover:bg-white hover:text-emerald-600 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-emerald-500/30 disabled:cursor-not-allowed disabled:opacity-50 dark:hover:bg-dark-800 dark:hover:text-emerald-400"
                   :disabled="balanceBusyId === upstream.id"
                   :title="t('admin.upstreams.refreshBalance')"
                   :aria-label="t('admin.upstreams.refreshBalance')"
@@ -175,22 +248,7 @@
                 >
                   <Icon name="refresh" size="sm" :class="balanceBusyId === upstream.id ? 'animate-spin' : ''" />
                 </button>
-                <span class="ml-auto inline-flex items-baseline gap-1 whitespace-nowrap">
-                  <span class="text-xs text-gray-500 dark:text-gray-400">{{ t('admin.upstreams.remaining') }}</span>
-                  <strong class="text-base font-semibold tabular-nums text-emerald-600 dark:text-emerald-400">
-                    {{ remainingLabel(upstream) }}
-                  </strong>
-                  <span class="text-xs text-gray-500 dark:text-gray-400">{{ currencyLabel(upstream) }}</span>
-                </span>
               </div>
-              <span
-                v-if="upstream.last_error"
-                class="inline-flex max-w-full items-center gap-1 truncate rounded-md bg-red-50 px-2 py-1 text-xs text-red-700 dark:bg-red-900/20 dark:text-red-300 xl:max-w-xs"
-                :title="upstream.last_error"
-              >
-                <Icon name="exclamationCircle" size="xs" class="shrink-0" />
-                {{ upstream.last_error }}
-              </span>
               <button
                 type="button"
                 class="btn btn-secondary btn-sm"
@@ -205,44 +263,61 @@
                 />
                 {{ busyId === upstream.id ? t('admin.upstreams.testing') : t('admin.upstreams.test') }}
               </button>
-              <button
-                type="button"
-                class="btn btn-secondary btn-sm"
-                @click="openEdit(upstream)"
-              >
-                <Icon name="edit" size="sm" class="mr-1" />
-                {{ t('common.edit') }}
-              </button>
-              <button
-                type="button"
-                class="btn btn-danger btn-sm"
-                @click="confirmDeleteUpstream(upstream)"
-              >
-                <Icon name="trash" size="sm" class="mr-1" />
-                {{ t('admin.upstreams.delete') }}
-              </button>
-              <a
-                :href="upstream.base_url"
-                target="_blank"
-                rel="noopener noreferrer"
-                class="btn btn-secondary btn-sm"
-              >
-                <Icon name="externalLink" size="sm" class="mr-1" />
-                {{ t('admin.upstreams.openSite') }}
-              </a>
+              <div class="flex items-center gap-1">
+                <button
+                  type="button"
+                  class="flex h-8 w-8 items-center justify-center rounded-lg text-gray-400 transition-colors hover:bg-primary-50 hover:text-primary-600 dark:hover:bg-dark-700 dark:hover:text-primary-400"
+                  :title="t('common.edit')"
+                  :aria-label="t('common.edit')"
+                  @click="openEdit(upstream)"
+                >
+                  <Icon name="edit" size="sm" />
+                </button>
+                <a
+                  :href="upstream.base_url"
+                  target="_blank"
+                  rel="noopener noreferrer"
+                  class="flex h-8 w-8 items-center justify-center rounded-lg text-gray-400 transition-colors hover:bg-primary-50 hover:text-primary-600 dark:hover:bg-dark-700 dark:hover:text-primary-400"
+                  :title="t('admin.upstreams.openSite')"
+                  :aria-label="t('admin.upstreams.openSite')"
+                >
+                  <Icon name="externalLink" size="sm" />
+                </a>
+                <button
+                  type="button"
+                  class="flex h-8 w-8 items-center justify-center rounded-lg text-gray-400 transition-colors hover:bg-red-50 hover:text-red-600 dark:hover:bg-red-900/20 dark:hover:text-red-400"
+                  :title="t('admin.upstreams.delete')"
+                  :aria-label="t('admin.upstreams.delete')"
+                  @click="confirmDeleteUpstream(upstream)"
+                >
+                  <Icon name="trash" size="sm" />
+                </button>
+              </div>
             </div>
+          </div>
+
+          <!-- Error Strip -->
+          <div
+            v-if="upstream.last_error"
+            class="flex items-center gap-2 border-t border-red-100 bg-red-50/60 px-4 py-2 text-xs text-red-700 dark:border-red-900/30 dark:bg-red-950/20 dark:text-red-300 sm:px-5"
+          >
+            <Icon name="exclamationCircle" size="xs" class="shrink-0" />
+            <span class="truncate" :title="upstream.last_error">{{ upstream.last_error }}</span>
           </div>
 
           <!-- Expanded Details -->
           <div
             v-if="expanded.has(upstream.id)"
-            class="border-t border-gray-100 bg-gray-50/60 p-5 dark:border-dark-700 dark:bg-dark-900/30 sm:p-6"
+            class="border-t border-gray-100 bg-gray-50/60 p-4 dark:border-dark-700 dark:bg-dark-900/30 sm:p-5"
           >
             <div class="grid gap-4 lg:grid-cols-2">
               <!-- Groups Panel -->
-              <div class="rounded-lg border border-gray-200 bg-white p-4 dark:border-dark-700 dark:bg-dark-800">
+              <div class="rounded-xl border border-gray-200 bg-white p-4 dark:border-dark-700 dark:bg-dark-800">
                 <div class="mb-3 flex items-center justify-between gap-3">
-                  <h2 class="font-medium text-gray-900 dark:text-white">
+                  <h2 class="flex items-center gap-2 text-sm font-semibold text-gray-900 dark:text-white">
+                    <span class="flex h-7 w-7 items-center justify-center rounded-lg bg-blue-100 text-blue-600 dark:bg-blue-900/30 dark:text-blue-400">
+                      <Icon name="grid" size="xs" />
+                    </span>
                     {{ t('admin.upstreams.groups') }}
                   </h2>
                   <button
@@ -279,7 +354,7 @@
                           {{ group.name }}
                         </td>
                         <td class="py-2.5 pr-3">
-                          <span class="inline-flex items-center rounded-md bg-blue-50 px-2 py-0.5 text-xs font-medium text-blue-700 dark:bg-blue-900/30 dark:text-blue-300">
+                          <span class="badge badge-primary">
                             {{ ratioLabel(group.ratio) }}
                           </span>
                         </td>
@@ -299,23 +374,23 @@
 
                 <!-- Balance Summary -->
                 <div
-                  class="mt-4 grid grid-cols-3 gap-3 border-t border-gray-100 pt-4 dark:border-dark-700"
+                  class="mt-4 grid grid-cols-3 gap-2 border-t border-gray-100 pt-4 dark:border-dark-700"
                 >
-                  <div class="rounded-md bg-gray-50 px-3 py-2 dark:bg-dark-800">
-                    <span class="block text-xs text-gray-500">{{ t('admin.upstreams.quota') }}</span>
-                    <strong class="mt-0.5 block text-sm text-gray-800 dark:text-gray-200">
+                  <div class="rounded-lg bg-gray-50 px-3 py-2 text-center dark:bg-dark-900/50">
+                    <span class="block text-xs text-gray-500 dark:text-gray-400">{{ t('admin.upstreams.quota') }}</span>
+                    <strong class="mt-0.5 block text-sm font-semibold tabular-nums text-gray-800 dark:text-gray-200">
                       {{ numberLabel(upstream.balance_snapshot?.quota) }}
                     </strong>
                   </div>
-                  <div class="rounded-md bg-gray-50 px-3 py-2 dark:bg-dark-800">
-                    <span class="block text-xs text-gray-500">{{ t('admin.upstreams.usedQuota') }}</span>
-                    <strong class="mt-0.5 block text-sm text-gray-800 dark:text-gray-200">
+                  <div class="rounded-lg bg-gray-50 px-3 py-2 text-center dark:bg-dark-900/50">
+                    <span class="block text-xs text-gray-500 dark:text-gray-400">{{ t('admin.upstreams.usedQuota') }}</span>
+                    <strong class="mt-0.5 block text-sm font-semibold tabular-nums text-gray-800 dark:text-gray-200">
                       {{ numberLabel(upstream.balance_snapshot?.used_quota) }}
                     </strong>
                   </div>
-                  <div class="rounded-md bg-gray-50 px-3 py-2 dark:bg-dark-800">
-                    <span class="block text-xs text-gray-500">{{ t('admin.upstreams.requestCount') }}</span>
-                    <strong class="mt-0.5 block text-sm text-gray-800 dark:text-gray-200">
+                  <div class="rounded-lg bg-gray-50 px-3 py-2 text-center dark:bg-dark-900/50">
+                    <span class="block text-xs text-gray-500 dark:text-gray-400">{{ t('admin.upstreams.requestCount') }}</span>
+                    <strong class="mt-0.5 block text-sm font-semibold tabular-nums text-gray-800 dark:text-gray-200">
                       {{ numberLabel(upstream.balance_snapshot?.request_count) }}
                     </strong>
                   </div>
@@ -333,9 +408,12 @@
               </div>
 
               <!-- Resources Panel -->
-              <div class="rounded-lg border border-gray-200 bg-white p-4 dark:border-dark-700 dark:bg-dark-800">
+              <div class="rounded-xl border border-gray-200 bg-white p-4 dark:border-dark-700 dark:bg-dark-800">
                 <div class="mb-3 flex items-center justify-between gap-3">
-                  <h2 class="font-medium text-gray-900 dark:text-white">
+                  <h2 class="flex items-center gap-2 text-sm font-semibold text-gray-900 dark:text-white">
+                    <span class="flex h-7 w-7 items-center justify-center rounded-lg bg-violet-100 text-violet-600 dark:bg-violet-900/30 dark:text-violet-400">
+                      <Icon name="key" size="xs" />
+                    </span>
                     {{ t('admin.upstreams.resources') }}
                   </h2>
                   <button
@@ -351,12 +429,12 @@
                 <!-- Resource List -->
                 <div
                   v-if="resourcesByUpstream[upstream.id]?.length"
-                  class="space-y-3"
+                  class="space-y-2.5"
                 >
                   <div
                     v-for="resource in resourcesByUpstream[upstream.id]"
                     :key="resource.id"
-                    class="rounded-lg border border-gray-100 p-3 transition-colors hover:border-gray-200 dark:border-dark-700 dark:hover:border-dark-600"
+                    class="rounded-xl border border-gray-100 p-3 transition-all hover:border-primary-200 hover:shadow-sm dark:border-dark-700 dark:hover:border-dark-500"
                   >
                     <div class="flex items-start justify-between gap-3">
                       <div class="min-w-0">
@@ -397,7 +475,7 @@
                       <div class="flex shrink-0 gap-1">
                         <button
                           type="button"
-                          class="btn btn-ghost btn-sm min-h-10 min-w-10"
+                          class="flex h-8 w-8 items-center justify-center rounded-lg text-gray-400 transition-colors hover:bg-primary-50 hover:text-primary-600 dark:hover:bg-dark-700 dark:hover:text-primary-400"
                           :title="t('admin.upstreams.refreshModels')"
                           :aria-label="t('admin.upstreams.refreshModels')"
                           @click="refreshResourceModels(resource)"
@@ -406,7 +484,7 @@
                         </button>
                         <button
                           type="button"
-                          class="btn btn-ghost btn-sm min-h-10 min-w-10"
+                          class="flex h-8 w-8 items-center justify-center rounded-lg text-gray-400 transition-colors hover:bg-primary-50 hover:text-primary-600 dark:hover:bg-dark-700 dark:hover:text-primary-400"
                           :title="t('admin.upstreams.chat')"
                           :aria-label="t('admin.upstreams.chat')"
                           @click="openChat(resource)"
@@ -415,7 +493,7 @@
                         </button>
                         <button
                           type="button"
-                          class="btn btn-ghost btn-sm min-h-10 min-w-10"
+                          class="flex h-8 w-8 items-center justify-center rounded-lg text-gray-400 transition-colors hover:bg-primary-50 hover:text-primary-600 dark:hover:bg-dark-700 dark:hover:text-primary-400"
                           :title="t('admin.upstreams.sync')"
                           :aria-label="t('admin.upstreams.sync')"
                           @click="openSync(resource)"
@@ -433,7 +511,7 @@
                       <span
                         v-for="m in resource.models_snapshot.slice(0, 8)"
                         :key="m"
-                        class="rounded-md bg-gray-100 px-2 py-0.5 text-xs text-gray-600 dark:bg-dark-700 dark:text-gray-400"
+                        class="rounded-md bg-primary-50/80 px-2 py-0.5 text-xs text-primary-700 ring-1 ring-primary-100 dark:bg-primary-900/20 dark:text-primary-300 dark:ring-primary-900/40"
                       >
                         {{ m }}
                       </span>
@@ -1004,6 +1082,16 @@ function kindLabel(kind: string) {
     : t('admin.upstreams.newapi')
 }
 
+function kindTileClass(kind: string) {
+  return kind === 'sub2api'
+    ? 'bg-gradient-to-br from-violet-500 to-purple-600 shadow-violet-500/30'
+    : 'bg-gradient-to-br from-primary-500 to-blue-600 shadow-primary-500/30'
+}
+
+function kindBadgeClass(kind: string) {
+  return kind === 'sub2api' ? 'badge-purple' : 'badge-primary'
+}
+
 function selectProtocol(kind: string) {
   form.kind = kind
   protocolOpen.value = false
@@ -1134,11 +1222,43 @@ async function load() {
     upstreams.value = result.items
     totalUpstreams.value = result.total
     totalPages.value = result.pages
+    pruneDetailCaches()
   } catch (error) {
     appStore.showError(errorMessage(error))
   } finally {
     loading.value = false
   }
+}
+
+// 仅保留当前页上游的展开状态与详情缓存，防止翻页累积导致内存无限增长
+function pruneDetailCaches() {
+  const visibleIds = new Set(upstreams.value.map((item) => item.id))
+
+  const nextExpanded = new Set<number>()
+  for (const id of expanded.value) {
+    if (visibleIds.has(id)) nextExpanded.add(id)
+  }
+  expanded.value = nextExpanded
+
+  const nextGroups: Record<number, UpstreamGroupItem[]> = {}
+  for (const [id, groups] of Object.entries(groupsByUpstream.value)) {
+    const numericId = Number(id)
+    if (visibleIds.has(numericId)) nextGroups[numericId] = groups
+  }
+  groupsByUpstream.value = nextGroups
+
+  const nextResources: Record<number, UpstreamResource[]> = {}
+  for (const [id, resources] of Object.entries(resourcesByUpstream.value)) {
+    const numericId = Number(id)
+    if (visibleIds.has(numericId)) nextResources[numericId] = resources
+  }
+  resourcesByUpstream.value = nextResources
+
+  const nextLoading = new Set<number>()
+  for (const id of resourceLoadingIds.value) {
+    if (visibleIds.has(id)) nextLoading.add(id)
+  }
+  resourceLoadingIds.value = nextLoading
 }
 
 async function loadBalanceSettings() {
@@ -1150,7 +1270,13 @@ async function loadBalanceSettings() {
   } catch (error) { appStore.showError(errorMessage(error)) }
 }
 
-function addNotifyEmail() { balanceSettings.emails.push('') }
+const newNotifyEmail = ref('')
+function addNotifyEmailFromInput() {
+  const email = newNotifyEmail.value.trim()
+  if (!email) return
+  balanceSettings.emails.push(email)
+  newNotifyEmail.value = ''
+}
 function removeNotifyEmail(index: number) { balanceSettings.emails.splice(index, 1) }
 
 async function saveBalanceSettings() {
@@ -1498,5 +1624,7 @@ onBeforeUnmount(() => {
   window.removeEventListener('resize', repositionOpenMenus)
   window.removeEventListener('scroll', repositionOpenMenus, true)
   if (balanceTimer) clearInterval(balanceTimer)
+  if (searchTimer) clearTimeout(searchTimer)
+  chat.reset()
 })
 </script>

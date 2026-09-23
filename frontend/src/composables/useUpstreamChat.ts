@@ -14,8 +14,13 @@ export function useUpstreamChat() {
   const loading = ref(false)
   const model = ref('')
   const prompt = ref('')
+  let abortController: AbortController | null = null
 
   function reset() {
+    if (abortController) {
+      abortController.abort()
+      abortController = null
+    }
     messages.value = []
     loading.value = false
     model.value = ''
@@ -37,6 +42,10 @@ export function useUpstreamChat() {
     const assistant = messages.value[messages.value.length - 1]
     loading.value = true
 
+    abortController?.abort()
+    const controller = new AbortController()
+    abortController = controller
+
     try {
       const url = buildApiUrl(
         `/admin/upstreams/resources/${resource.id}/chat/completions`
@@ -51,7 +60,8 @@ export function useUpstreamChat() {
           model: model.value,
           messages: messages.value.slice(0, -1),
           stream: true
-        })
+        }),
+        signal: controller.signal
       })
 
       if (!response.ok || !response.body) {
@@ -88,11 +98,18 @@ export function useUpstreamChat() {
         }
       }
     } catch (error: unknown) {
+      if (error instanceof DOMException && error.name === 'AbortError') {
+        // 用户关闭对话框或离开页面，保留已接收内容，不视为错误
+        return
+      }
       const message =
         error instanceof Error ? error.message : 'Request failed'
       assistant.content = message
     } finally {
-      loading.value = false
+      if (abortController === controller) {
+        abortController = null
+        loading.value = false
+      }
     }
   }
 
