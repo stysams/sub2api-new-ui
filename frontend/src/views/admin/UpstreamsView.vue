@@ -2,6 +2,16 @@
   <AppLayout>
     <div class="mx-auto max-w-7xl space-y-3 p-4 sm:p-5 lg:space-y-4">
       <div class="flex items-center justify-end gap-2">
+        <button
+          type="button"
+          class="btn btn-secondary flex h-11 w-11 shrink-0 items-center justify-center p-0"
+          :disabled="loading"
+          :title="t('common.refresh')"
+          :aria-label="t('common.refresh')"
+          @click="refreshUpstreams"
+        >
+          <Icon name="refresh" size="sm" :class="loading ? 'animate-spin' : ''" />
+        </button>
         <div class="relative min-w-0 flex-1 sm:flex-none">
           <Icon name="search" size="sm" class="pointer-events-none absolute left-3 top-1/2 -translate-y-1/2 text-gray-400" />
           <input
@@ -323,17 +333,24 @@
                   <button
                     type="button"
                     class="btn btn-ghost btn-sm"
-                    :disabled="detailBusy === upstream.id"
+                    :disabled="groupLoadingIds.has(upstream.id)"
                     @click="loadGroups(upstream, true)"
                   >
-                    <Icon name="refresh" size="sm" class="mr-1" />
+                    <Icon name="refresh" size="sm" class="mr-1" :class="groupLoadingIds.has(upstream.id) ? 'animate-spin' : ''" />
                     {{ t('admin.upstreams.refreshGroups') }}
                   </button>
                 </div>
 
                 <!-- Groups Table -->
                 <div
-                  v-if="groupsByUpstream[upstream.id]?.length"
+                  v-if="!groupsByUpstream[upstream.id]?.length && groupLoadingIds.has(upstream.id)"
+                  class="flex items-center justify-center py-5 text-sm text-gray-500 dark:text-gray-400"
+                >
+                  <Icon name="refresh" size="sm" class="mr-2 animate-spin" />
+                  {{ t('common.loading') }}
+                </div>
+                <div
+                  v-else-if="groupsByUpstream[upstream.id]?.length"
                   class="overflow-x-auto"
                 >
                   <table class="w-full text-left text-sm">
@@ -987,10 +1004,11 @@ const totalPages = ref(1)
 const searchQuery = ref('')
 let searchTimer: ReturnType<typeof setTimeout> | null = null
 const loading = ref(false)
+let upstreamLoadRequest = 0
 const saving = ref(false)
 const busyId = ref<number | null>(null)
 const balanceBusyId = ref<number | null>(null)
-const detailBusy = ref<number | null>(null)
+const groupLoadingIds = ref(new Set<number>())
 const resourceLoadingIds = ref(new Set<number>())
 const balanceSettings = reactive({ enabled: false, threshold: 0, emails: [] as string[] })
 const balanceSettingsSaving = ref(false)
@@ -1211,7 +1229,8 @@ function errorMessage(error: unknown): string {
 
 // ── Data Loading ────────────────────────────────────────────
 
-async function load() {
+async function loadUpstreams() {
+  const requestId = ++upstreamLoadRequest
   loading.value = true
   try {
     const result = await adminAPI.upstreams.listPaginated({
@@ -1219,15 +1238,21 @@ async function load() {
       page_size: pageSize.value,
       search: searchQuery.value || undefined
     })
+    if (requestId !== upstreamLoadRequest) return
     upstreams.value = result.items
     totalUpstreams.value = result.total
     totalPages.value = result.pages
     pruneDetailCaches()
   } catch (error) {
-    appStore.showError(errorMessage(error))
+    if (requestId === upstreamLoadRequest) appStore.showError(errorMessage(error))
   } finally {
-    loading.value = false
+    if (requestId === upstreamLoadRequest) loading.value = false
   }
+}
+
+async function refreshUpstreams() {
+  if (loading.value) return
+  await loadUpstreams()
 }
 
 // 仅保留当前页上游的展开状态与详情缓存，防止翻页累积导致内存无限增长
@@ -1253,6 +1278,12 @@ function pruneDetailCaches() {
     if (visibleIds.has(numericId)) nextResources[numericId] = resources
   }
   resourcesByUpstream.value = nextResources
+
+  const nextGroupLoading = new Set<number>()
+  for (const id of groupLoadingIds.value) {
+    if (visibleIds.has(id)) nextGroupLoading.add(id)
+  }
+  groupLoadingIds.value = nextGroupLoading
 
   const nextLoading = new Set<number>()
   for (const id of resourceLoadingIds.value) {
@@ -1308,19 +1339,21 @@ function resetBalanceTimer() {
 function goToPage(page: number) {
   if (page < 1 || page > totalPages.value || page === currentPage.value) return
   currentPage.value = page
-  load()
+  loadUpstreams()
 }
 
 function onSearchInput() {
   if (searchTimer) clearTimeout(searchTimer)
   searchTimer = setTimeout(() => {
     currentPage.value = 1
-    load()
+    loadUpstreams()
   }, 300)
 }
 
 async function loadGroups(upstream: Upstream, refresh = false) {
-  detailBusy.value = upstream.id
+  const ids = new Set(groupLoadingIds.value)
+  ids.add(upstream.id)
+  groupLoadingIds.value = ids
   try {
     const groups = await adminAPI.upstreams.groups(upstream.id, refresh)
     groupsByUpstream.value = {
@@ -1330,7 +1363,9 @@ async function loadGroups(upstream: Upstream, refresh = false) {
   } catch (error) {
     appStore.showError(errorMessage(error))
   } finally {
-    detailBusy.value = null
+    const done = new Set(groupLoadingIds.value)
+    done.delete(upstream.id)
+    groupLoadingIds.value = done
   }
 }
 
@@ -1354,8 +1389,7 @@ async function loadResources(upstream: Upstream) {
 }
 
 async function loadDetails(upstream: Upstream, refresh = false) {
-  await loadGroups(upstream, refresh)
-  await loadResources(upstream)
+  await Promise.all([loadGroups(upstream, refresh), loadResources(upstream)])
 }
 
 
@@ -1363,8 +1397,11 @@ async function toggleExpanded(upstream: Upstream) {
   const next = new Set(expanded.value)
   if (next.has(upstream.id)) {
     next.delete(upstream.id)
+    expanded.value = next
+    return
   } else {
     next.add(upstream.id)
+    expanded.value = next
     // Load groups and resources in parallel on first expand
     const promises: Promise<void>[] = []
     if (!groupsByUpstream.value[upstream.id]) {
@@ -1377,7 +1414,6 @@ async function toggleExpanded(upstream: Upstream) {
       await Promise.all(promises)
     }
   }
-  expanded.value = next
 }
 
 // ── Create / Edit ───────────────────────────────────────────
@@ -1446,7 +1482,7 @@ async function submitForm() {
       appStore.showSuccess(t('admin.upstreams.saved'))
     }
 
-    await load()
+    await loadUpstreams()
   } catch (error) {
     appStore.showError(errorMessage(error))
   } finally {
@@ -1503,7 +1539,7 @@ async function executeDelete() {
     appStore.showSuccess(t('admin.upstreams.deleted'))
     showDeleteDialog.value = false
     deletingUpstream.value = null
-    await load()
+    await loadUpstreams()
   } catch (error) {
     appStore.showError(errorMessage(error))
   }
@@ -1612,7 +1648,7 @@ async function handleSendChat() {
 // ── Init ────────────────────────────────────────────────────
 
 onMounted(() => {
-  load()
+  loadUpstreams()
   loadBalanceSettings()
   window.addEventListener('resize', repositionOpenMenus)
   window.addEventListener('scroll', repositionOpenMenus, true)

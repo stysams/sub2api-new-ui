@@ -26,7 +26,7 @@ export interface Upstream {
   login_identifier?: string
   remote_user_id?: string
   balance_snapshot: UpstreamBalanceSnapshot
-  group_snapshot: { items?: UpstreamGroupItem[]; fetched_at?: string }
+  group_snapshot?: { items?: UpstreamGroupItem[]; fetched_at?: string }
   notes?: string
   enabled: boolean
   last_checked_at?: string | null

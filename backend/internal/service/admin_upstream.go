@@ -146,7 +146,26 @@ func (s *adminUpstreamService) ListPaginated(ctx context.Context, page, pageSize
 		if err != nil {
 			return nil, 0, err
 		}
-		result = append(result, &UpstreamListView{UpstreamView: *v, ResourceCount: resourceCounts[item.ID]})
+		result = append(result, &UpstreamListView{
+			ID:              v.ID,
+			Name:            v.Name,
+			SortCode:        v.SortCode,
+			Kind:            v.Kind,
+			BaseURL:         v.BaseURL,
+			TokenExpiresAt:  v.TokenExpiresAt,
+			LoginIdentifier: v.LoginIdentifier,
+			RemoteUserID:    v.RemoteUserID,
+			BalanceSnapshot: v.BalanceSnapshot,
+			Notes:           v.Notes,
+			Enabled:         v.Enabled,
+			LastCheckedAt:   v.LastCheckedAt,
+			LastError:       v.LastError,
+			CreatedBy:       v.CreatedBy,
+			CreatedAt:       v.CreatedAt,
+			UpdatedAt:       v.UpdatedAt,
+			TokenMasked:     v.TokenMasked,
+			ResourceCount:   resourceCounts[item.ID],
+		})
 	}
 	return result, total, nil
 }

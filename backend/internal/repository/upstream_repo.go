@@ -160,7 +160,7 @@ func (r *upstreamRepository) ListPaginated(ctx context.Context, page, pageSize i
 
 	offset := (page - 1) * pageSize
 	selectQuery := fmt.Sprintf("%s %s ORDER BY sort_code, id LIMIT $%d OFFSET $%d",
-		upstreamSelect, whereClause, argIdx, argIdx+1)
+		upstreamListSelect, whereClause, argIdx, argIdx+1)
 	selectArgs := append(args, pageSize, offset)
 
 	rows, err := r.db.QueryContext(ctx, selectQuery, selectArgs...)
@@ -171,7 +171,7 @@ func (r *upstreamRepository) ListPaginated(ctx context.Context, page, pageSize i
 
 	var out []*service.Upstream
 	for rows.Next() {
-		item, err := scanUpstream(rows)
+		item, err := scanUpstreamList(rows)
 		if err != nil {
 			return nil, 0, err
 		}
@@ -201,6 +201,7 @@ func (r *upstreamRepository) CountResources(ctx context.Context) (map[int64]int,
 }
 
 const upstreamSelect = `SELECT id,name,sort_code,kind,base_url,token_encrypted,COALESCE(refresh_token_encrypted,''),COALESCE(password_encrypted,''),token_expires_at,COALESCE(login_identifier,''),COALESCE(remote_user_id,''),balance_snapshot,group_snapshot,COALESCE(notes,''),enabled,last_checked_at,COALESCE(last_error,''),created_by,created_at,updated_at FROM upstreams`
+const upstreamListSelect = `SELECT id,name,sort_code,kind,base_url,token_encrypted,token_expires_at,COALESCE(login_identifier,''),COALESCE(remote_user_id,''),balance_snapshot,COALESCE(notes,''),enabled,last_checked_at,COALESCE(last_error,''),created_by,created_at,updated_at FROM upstreams`
 const resourceSelect = `SELECT id,upstream_id,resource_type,remote_id,COALESCE(name,''),COALESCE(group_name,''),key_encrypted,models_snapshot,models_fetched_at,synced_account_id,synced_rate_multiplier,synced_at,enabled,created_at,updated_at FROM upstream_resources`
 
 type scanner interface{ Scan(...any) error }
@@ -221,6 +222,21 @@ func scanUpstream(s scanner) (*service.Upstream, error) {
 	}
 	return &item, nil
 }
+
+func scanUpstreamList(s scanner) (*service.Upstream, error) {
+	var item service.Upstream
+	var balance []byte
+	var login, remoteUserID, notes, lastError string
+	if err := s.Scan(&item.ID, &item.Name, &item.SortCode, &item.Kind, &item.BaseURL, &item.TokenEncrypted, &item.TokenExpiresAt, &login, &remoteUserID, &balance, &notes, &item.Enabled, &item.LastCheckedAt, &lastError, &item.CreatedBy, &item.CreatedAt, &item.UpdatedAt); err != nil {
+		return nil, err
+	}
+	item.LoginIdentifier, item.RemoteUserID, item.Notes, item.LastError = login, remoteUserID, notes, lastError
+	if err := json.Unmarshal(balance, &item.BalanceSnapshot); err != nil {
+		return nil, fmt.Errorf("decode upstream balance snapshot: %w", err)
+	}
+	return &item, nil
+}
+
 func scanResource(s scanner) (*service.UpstreamResource, error) {
 	var item service.UpstreamResource
 	var group string

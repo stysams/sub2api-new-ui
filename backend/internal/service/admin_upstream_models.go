@@ -100,8 +100,24 @@ type UpstreamView struct {
 }
 
 type UpstreamListView struct {
-	UpstreamView
-	ResourceCount int `json:"resource_count"`
+	ID              int64                          `json:"id"`
+	Name            string                         `json:"name"`
+	SortCode        int                            `json:"sort_code"`
+	Kind            string                         `json:"kind"`
+	BaseURL         string                         `json:"base_url"`
+	TokenExpiresAt  *time.Time                     `json:"token_expires_at,omitempty"`
+	LoginIdentifier string                         `json:"login_identifier,omitempty"`
+	RemoteUserID    string                         `json:"remote_user_id,omitempty"`
+	BalanceSnapshot domain.UpstreamBalanceSnapshot `json:"balance_snapshot"`
+	Notes           string                         `json:"notes,omitempty"`
+	Enabled         bool                           `json:"enabled"`
+	LastCheckedAt   *time.Time                     `json:"last_checked_at,omitempty"`
+	LastError       string                         `json:"last_error,omitempty"`
+	CreatedBy       int64                          `json:"created_by"`
+	CreatedAt       time.Time                      `json:"created_at"`
+	UpdatedAt       time.Time                      `json:"updated_at"`
+	TokenMasked     string                         `json:"token_masked,omitempty"`
+	ResourceCount   int                            `json:"resource_count"`
 }
 type UpstreamResourceView struct {
 	UpstreamResource
