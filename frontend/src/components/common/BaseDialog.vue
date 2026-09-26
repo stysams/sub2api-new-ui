@@ -4,6 +4,7 @@
       <div
         v-if="show"
         class="modal-overlay"
+        :class="{ 'modal-overlay-fullscreen': fullscreen }"
         :style="zIndexStyle"
         :aria-labelledby="dialogId"
         role="dialog"
@@ -11,20 +12,23 @@
         @click.self="handleClose"
       >
         <!-- Modal panel -->
-        <div ref="dialogRef" :class="['modal-content', widthClasses]" @click.stop>
+        <div ref="dialogRef" :class="['modal-content', widthClasses, { 'modal-content-fullscreen': fullscreen }]" @click.stop>
           <!-- Header -->
           <div class="modal-header">
-            <h3 :id="dialogId" class="modal-title">
+            <h3 :id="dialogId" class="modal-title min-w-0 flex-1">
               {{ title }}
             </h3>
-            <button
-              v-if="showCloseButton"
-              @click="emit('close')"
-              class="-mr-2 rounded-xl p-2 text-gray-400 transition-colors hover:bg-gray-100 hover:text-gray-600 focus:outline-none focus-visible:ring-2 focus-visible:ring-primary-500/30 focus-visible:ring-offset-2 dark:text-dark-500 dark:hover:bg-dark-700 dark:hover:text-dark-300 dark:focus-visible:ring-offset-dark-900"
-              aria-label="Close modal"
-            >
-              <Icon name="x" size="md" />
-            </button>
+            <div class="flex shrink-0 items-center gap-1">
+              <slot name="header-actions" />
+              <button
+                v-if="showCloseButton"
+                @click="emit('close')"
+                class="-mr-2 rounded-xl p-2 text-gray-400 transition-colors hover:bg-gray-100 hover:text-gray-600 focus:outline-none focus-visible:ring-2 focus-visible:ring-primary-500/30 focus-visible:ring-offset-2 dark:text-dark-500 dark:hover:bg-dark-700 dark:hover:text-dark-300 dark:focus-visible:ring-offset-dark-900"
+                aria-label="Close modal"
+              >
+                <Icon name="x" size="md" />
+              </button>
+            </div>
           </div>
 
           <!-- Body -->
@@ -68,11 +72,13 @@ interface Props {
   closeOnEscape?: boolean
   closeOnClickOutside?: boolean
   showCloseButton?: boolean
+  fullscreen?: boolean
   zIndex?: number
 }
 
 interface Emits {
   (e: 'close'): void
+  (e: 'exit-fullscreen'): void
 }
 
 const props = withDefaults(defineProps<Props>(), {
@@ -80,6 +86,7 @@ const props = withDefaults(defineProps<Props>(), {
   closeOnEscape: true,
   closeOnClickOutside: false,
   showCloseButton: true,
+  fullscreen: false,
   zIndex: 50
 })
 
@@ -112,7 +119,8 @@ const handleClose = () => {
 
 const handleEscape = (event: KeyboardEvent) => {
   if (props.show && props.closeOnEscape && event.key === 'Escape') {
-    emit('close')
+    if (props.fullscreen) emit('exit-fullscreen')
+    else emit('close')
   }
 }
 

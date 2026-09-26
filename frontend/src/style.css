@@ -500,6 +500,24 @@
     @apply flex flex-col;
   }
 
+  .modal-overlay.modal-overlay-fullscreen {
+    @apply p-0;
+  }
+
+  .modal-content.modal-content-fullscreen {
+    width: 100%;
+    max-width: none;
+    height: 100vh;
+    height: 100dvh;
+    max-height: none;
+    border-width: 0;
+    border-radius: 0;
+  }
+
+  .modal-content.modal-content-fullscreen .modal-body {
+    min-height: 0;
+  }
+
   .modal-header {
     @apply border-b border-gray-200 px-4 py-3 dark:border-dark-700;
     @apply sm:px-6 sm:py-4;

@@ -81,6 +81,8 @@ export default {
     loadFailed: 'Unable to load prompt call records.',
     retry: 'Retry',
     detailTitle: 'Prompt call details #{id}',
+    enterFullscreen: 'Enter fullscreen',
+    exitFullscreen: 'Exit fullscreen',
     detailLoadFailed: 'Unable to load prompt details.',
     callInfo: 'Call information',
     endpoint: 'Endpoint',

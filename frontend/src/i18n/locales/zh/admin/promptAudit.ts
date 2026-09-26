@@ -81,6 +81,8 @@ export default {
     loadFailed: '无法加载提示词调用记录。',
     retry: '重试',
     detailTitle: '提示词调用详情 #{id}',
+    enterFullscreen: '进入全屏',
+    exitFullscreen: '退出全屏',
     detailLoadFailed: '无法加载提示词详情。',
     callInfo: '调用信息',
     endpoint: '入口',

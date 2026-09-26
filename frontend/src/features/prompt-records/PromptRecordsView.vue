@@ -192,6 +192,7 @@
       <div class="card overflow-hidden">
         <form
           class="flex flex-wrap items-end justify-between gap-4 border-b border-gray-100 p-4 dark:border-dark-700 sm:p-6"
+          data-test="prompt-record-filter-form"
           @submit.prevent="applyFilters"
         >
           <div class="flex flex-1 flex-wrap items-end gap-4">
@@ -470,9 +471,24 @@
     :show="showDetail"
     :title="t('admin.promptRecords.detailTitle', { id: selectedID ?? '-' })"
     width="wide"
+    :fullscreen="detailFullscreen"
     close-on-click-outside
     @close="closeDetail"
+    @exit-fullscreen="exitDetailFullscreen"
   >
+    <template #header-actions>
+      <button
+        type="button"
+        class="inline-flex h-11 w-11 items-center justify-center rounded-lg text-gray-500 transition-colors hover:bg-gray-100 hover:text-gray-700 focus:outline-none focus-visible:ring-2 focus-visible:ring-primary-500/30 focus-visible:ring-offset-2 dark:text-gray-400 dark:hover:bg-dark-700 dark:hover:text-gray-200 dark:focus-visible:ring-offset-dark-900"
+        :aria-label="t(detailFullscreen ? 'admin.promptRecords.exitFullscreen' : 'admin.promptRecords.enterFullscreen')"
+        :title="t(detailFullscreen ? 'admin.promptRecords.exitFullscreen' : 'admin.promptRecords.enterFullscreen')"
+        data-test="prompt-record-detail-fullscreen"
+        @click="toggleDetailFullscreen"
+      >
+        <Icon :name="detailFullscreen ? 'shrink' : 'expand'" size="md" />
+      </button>
+    </template>
+
     <div v-if="detailLoading" class="flex min-h-48 items-center justify-center" role="status">
       <Icon name="refresh" size="lg" class="animate-spin text-primary-500 motion-reduce:animate-none" />
       <span class="sr-only">{{ t('common.loading') }}</span>
@@ -695,6 +711,7 @@ let activeFilters: Record<string, string | number | undefined> = {}
 let listController: AbortController | null = null
 
 const showDetail = ref(false)
+const detailFullscreen = ref(false)
 const selectedID = ref<number | null>(null)
 const detail = ref<PromptRecord | null>(null)
 const detailLoading = ref(false)
@@ -882,6 +899,7 @@ function handlePageSizeChange(pageSize: number) {
 async function openDetail(id: number) {
   const sequence = ++detailRequestSequence
   selectedID.value = id
+  detailFullscreen.value = false
   showDetail.value = true
   detail.value = null
   detailError.value = false
@@ -908,10 +926,19 @@ async function copyRequestBody() {
 function closeDetail() {
   detailRequestSequence += 1
   showDetail.value = false
+  detailFullscreen.value = false
   selectedID.value = null
   detail.value = null
   detailError.value = false
   detailLoading.value = false
+}
+
+function toggleDetailFullscreen() {
+  detailFullscreen.value = !detailFullscreen.value
+}
+
+function exitDetailFullscreen() {
+  detailFullscreen.value = false
 }
 
 function handleSelectedKeysUpdate(keys: Array<string | number>) {

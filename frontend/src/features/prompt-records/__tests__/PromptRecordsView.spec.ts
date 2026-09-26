@@ -132,7 +132,7 @@ describe('PromptRecordsView', () => {
     expect(oldSignal.aborted).toBe(false)
     await wrapper.get('form').trigger('submit') // retention form does not reload records
     await wrapper.get('#prompt-record-model').setValue('latest')
-    await wrapper.findAll('form')[1].trigger('submit')
+    await wrapper.get('[data-test="prompt-record-filter-form"]').trigger('submit')
     await flushPromises()
     expect(oldSignal.aborted).toBe(true)
     rejectOld(new Error('late request failed'))
@@ -157,7 +157,7 @@ describe('PromptRecordsView', () => {
     await flushPromises()
     expect(mocks.listPromptRecords.mock.calls[2][0].cursor).toBeUndefined()
     await wrapper.get('#prompt-record-model').setValue('new-model')
-    await wrapper.findAll('form')[1].trigger('submit')
+    await wrapper.get('[data-test="prompt-record-filter-form"]').trigger('submit')
     await flushPromises()
     expect(mocks.listPromptRecords.mock.lastCall?.[0]).toMatchObject({ page: 1, model: 'new-model', cursor: undefined })
     wrapper.unmount()
@@ -221,11 +221,44 @@ describe('PromptRecordsView', () => {
 		wrapper.unmount()
 	})
 
+	it('toggles the detail dialog into current-tab fullscreen mode', async () => {
+		const wrapper = mount(PromptRecordsView, {
+			attachTo: document.body,
+			global: {
+				stubs: {
+					AppLayout: { template: '<div><slot /></div>' },
+				},
+			},
+		})
+
+		await flushPromises()
+		await wrapper.get('[data-test="prompt-record-detail-7"]').trigger('click')
+		await flushPromises()
+
+		const getModal = () => document.body.querySelector<HTMLElement>('.modal-overlay')
+		const getFullscreenButton = () => document.body.querySelector<HTMLButtonElement>('[data-test="prompt-record-detail-fullscreen"]')
+		const fullscreenButton = getFullscreenButton()
+		expect(fullscreenButton).not.toBeNull()
+		expect(fullscreenButton?.getAttribute('aria-label')).toBe('admin.promptRecords.enterFullscreen')
+		expect(getModal()?.classList.contains('modal-overlay-fullscreen')).toBe(false)
+
+		fullscreenButton?.click()
+		await flushPromises()
+		expect(getModal()?.classList.contains('modal-overlay-fullscreen')).toBe(true)
+		expect(getFullscreenButton()?.getAttribute('aria-label')).toBe('admin.promptRecords.exitFullscreen')
+
+		document.dispatchEvent(new KeyboardEvent('keydown', { key: 'Escape' }))
+		await flushPromises()
+		expect(getModal()?.classList.contains('modal-overlay-fullscreen')).toBe(false)
+		expect(getFullscreenButton()).not.toBeNull()
+		wrapper.unmount()
+	})
+
 	it('includes the API key name in the record search filters', async () => {
 		const wrapper = mount(PromptRecordsView, { global: { stubs: { AppLayout: { template: '<div><slot /></div>' } } } })
 		await flushPromises()
 		await wrapper.get('#prompt-record-api-key').setValue('primary')
-		await wrapper.findAll('form')[1].trigger('submit')
+		await wrapper.get('[data-test="prompt-record-filter-form"]').trigger('submit')
 		await flushPromises()
 		expect(mocks.listPromptRecords.mock.lastCall?.[0]).toMatchObject({ api_key: 'primary', page: 1, cursor: undefined })
 		wrapper.unmount()
