@@ -1,36 +1,37 @@
 <template>
   <AppLayout>
     <div class="mx-auto max-w-7xl space-y-3 p-4 sm:p-5 lg:space-y-4">
-      <div class="flex items-center justify-end gap-2">
-        <button
-          type="button"
-          class="btn btn-secondary flex h-11 w-11 shrink-0 items-center justify-center p-0"
-          :disabled="loading"
-          :title="t('common.refresh')"
-          :aria-label="t('common.refresh')"
-          @click="refreshUpstreams"
-        >
-          <Icon name="refresh" size="sm" :class="loading ? 'animate-spin' : ''" />
-        </button>
-        <div class="relative min-w-0 flex-1 sm:flex-none">
-          <Icon name="search" size="sm" class="pointer-events-none absolute left-3 top-1/2 -translate-y-1/2 text-gray-400" />
-          <input
-            v-model="searchQuery"
-            type="text"
-            class="input w-full pl-9 sm:w-64"
-            :placeholder="t('admin.upstreams.searchPlaceholder')"
-            @input="onSearchInput"
-          />
+      <div class="grid gap-3 xl:grid-cols-[minmax(0,1fr)_auto] xl:items-center">
+        <div class="flex items-center justify-end gap-2 xl:col-start-2 xl:row-start-1">
+          <button
+            type="button"
+            class="btn btn-secondary flex h-11 w-11 shrink-0 items-center justify-center p-0"
+            :disabled="loading"
+            :title="t('common.refresh')"
+            :aria-label="t('common.refresh')"
+            @click="refreshUpstreams"
+          >
+            <Icon name="refresh" size="sm" :class="loading ? 'animate-spin' : ''" />
+          </button>
+          <div class="relative min-w-0 flex-1 sm:flex-none">
+            <Icon name="search" size="sm" class="pointer-events-none absolute left-3 top-1/2 -translate-y-1/2 text-gray-400" />
+            <input
+              v-model="searchQuery"
+              type="text"
+              class="input w-full pl-9 sm:w-64"
+              :placeholder="t('admin.upstreams.searchPlaceholder')"
+              @input="onSearchInput"
+            />
+          </div>
+          <button type="button" class="btn btn-primary shrink-0" @click="openCreate">
+            <Icon name="plus" size="sm" class="mr-1.5" />
+            {{ t('admin.upstreams.add') }}
+          </button>
         </div>
-        <button type="button" class="btn btn-primary shrink-0" @click="openCreate">
-          <Icon name="plus" size="sm" class="mr-1.5" />
-          {{ t('admin.upstreams.add') }}
-        </button>
-      </div>
 
-      <section
-        class="card overflow-hidden border border-primary-100/80 bg-gradient-to-r from-primary-50/80 via-white to-blue-50/50 p-3 dark:border-primary-900/40 dark:from-primary-950/30 dark:via-dark-800/50 dark:to-blue-950/20 sm:px-4"
-      >
+        <section
+          class="card min-w-0 overflow-hidden border border-primary-100/80 bg-gradient-to-r from-primary-50/80 via-white to-blue-50/50 p-3 dark:border-primary-900/40 dark:from-primary-950/30 dark:via-dark-800/50 dark:to-blue-950/20 sm:px-4 xl:col-start-1 xl:row-start-1"
+        >
         <div class="flex flex-col gap-2 xl:flex-row xl:items-center xl:justify-between">
           <div class="flex min-w-0 flex-1 items-center gap-3">
             <span
@@ -107,7 +108,8 @@
             @keydown.enter.prevent="addNotifyEmailFromInput"
           />
         </div>
-      </section>
+        </section>
+      </div>
 
       <div v-if="!loading && upstreams.length" class="grid grid-cols-3 gap-2 sm:gap-3">
         <div class="stat-card card-hover items-center gap-2 p-2.5 sm:gap-3 sm:p-3">
