@@ -47,6 +47,12 @@ export interface UpstreamResource {
   models_snapshot: string[]
   models_fetched_at?: string | null
   synced_account_id?: number | null
+  synced_accounts?: Array<{
+    platform: string
+    account_id: number
+    rate_multiplier: number
+    synced_at: string
+  }>
   synced_rate_multiplier?: number | null
   synced_at?: string | null
   enabled: boolean
@@ -72,5 +78,5 @@ export interface UpstreamSyncResult {
   updated: number
   skipped: number
   failed: number
-  items: Array<{ resource_id: number; status: string; account_id?: number; message?: string }>
+  items: Array<{ resource_id: number; platform: string; status: string; account_id?: number; message?: string }>
 }

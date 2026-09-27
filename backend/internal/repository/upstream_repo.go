@@ -10,6 +10,7 @@ import (
 
 	"github.com/Wei-Shaw/sub2api/internal/domain"
 	"github.com/Wei-Shaw/sub2api/internal/service"
+	"github.com/lib/pq"
 )
 
 type upstreamRepository struct{ db *sql.DB }
@@ -82,16 +83,33 @@ func (r *upstreamRepository) ListResources(ctx context.Context, upstreamID int64
 	if err != nil {
 		return nil, fmt.Errorf("list upstream resources: %w", err)
 	}
-	defer func() { _ = rows.Close() }()
 	var result []*service.UpstreamResource
+	ids := make([]int64, 0)
 	for rows.Next() {
 		item, err := scanResource(rows)
 		if err != nil {
+			_ = rows.Close()
 			return nil, err
 		}
 		result = append(result, item)
+		ids = append(ids, item.ID)
 	}
-	return result, rows.Err()
+	if err := rows.Err(); err != nil {
+		_ = rows.Close()
+		return nil, err
+	}
+	_ = rows.Close()
+	links, err := r.loadResourceAccounts(ctx, ids)
+	if err != nil {
+		return nil, err
+	}
+	for _, item := range result {
+		item.SyncedAccounts = links[item.ID]
+		if item.SyncedAccounts == nil {
+			item.SyncedAccounts = []service.UpstreamSyncedAccount{}
+		}
+	}
+	return result, nil
 }
 
 func (r *upstreamRepository) GetResource(ctx context.Context, id int64) (*service.UpstreamResource, error) {
@@ -102,7 +120,37 @@ func (r *upstreamRepository) GetResource(ctx context.Context, id int64) (*servic
 	if err != nil {
 		return nil, fmt.Errorf("get upstream resource: %w", err)
 	}
+	links, err := r.loadResourceAccounts(ctx, []int64{id})
+	if err != nil {
+		return nil, err
+	}
+	item.SyncedAccounts = links[id]
+	if item.SyncedAccounts == nil {
+		item.SyncedAccounts = []service.UpstreamSyncedAccount{}
+	}
 	return item, nil
+}
+
+func (r *upstreamRepository) loadResourceAccounts(ctx context.Context, resourceIDs []int64) (map[int64][]service.UpstreamSyncedAccount, error) {
+	result := make(map[int64][]service.UpstreamSyncedAccount, len(resourceIDs))
+	if len(resourceIDs) == 0 {
+		return result, nil
+	}
+	rows, err := r.db.QueryContext(ctx, `SELECT resource_id, platform, account_id, rate_multiplier, synced_at
+		FROM upstream_resource_accounts WHERE resource_id = ANY($1) ORDER BY platform`, pq.Array(resourceIDs))
+	if err != nil {
+		return nil, fmt.Errorf("load upstream resource accounts: %w", err)
+	}
+	defer func() { _ = rows.Close() }()
+	for rows.Next() {
+		var resourceID int64
+		var account service.UpstreamSyncedAccount
+		if err := rows.Scan(&resourceID, &account.Platform, &account.AccountID, &account.RateMultiplier, &account.SyncedAt); err != nil {
+			return nil, err
+		}
+		result[resourceID] = append(result[resourceID], account)
+	}
+	return result, rows.Err()
 }
 
 func (r *upstreamRepository) CreateResource(ctx context.Context, item *service.UpstreamResource) error {
@@ -136,9 +184,30 @@ func (r *upstreamRepository) UpdateResourceKey(ctx context.Context, id int64, ke
 	return err
 }
 
-func (r *upstreamRepository) MarkResourceSynced(ctx context.Context, resourceID, accountID int64, rate float64, syncedAt time.Time) error {
-	_, err := r.db.ExecContext(ctx, `UPDATE upstream_resources SET synced_account_id=$1, synced_rate_multiplier=$2, synced_at=$3, updated_at=NOW() WHERE id=$4 AND deleted_at IS NULL`, accountID, rate, syncedAt, resourceID)
-	return err
+func (r *upstreamRepository) MarkResourceSynced(ctx context.Context, resourceID int64, platform string, accountID int64, rate float64, syncedAt time.Time) error {
+	tx, err := r.db.BeginTx(ctx, nil)
+	if err != nil {
+		return err
+	}
+	defer func() { _ = tx.Rollback() }()
+	if _, err := tx.ExecContext(ctx, `INSERT INTO upstream_resource_accounts (resource_id, platform, account_id, rate_multiplier, synced_at)
+		VALUES ($1,$2,$3,$4,$5) ON CONFLICT (resource_id, platform) DO UPDATE SET
+		account_id=EXCLUDED.account_id, rate_multiplier=EXCLUDED.rate_multiplier, synced_at=EXCLUDED.synced_at`,
+		resourceID, platform, accountID, rate, syncedAt); err != nil {
+		return err
+	}
+	updated, err := tx.ExecContext(ctx, `UPDATE upstream_resources SET
+		synced_rate_multiplier=CASE WHEN synced_account_id IS NULL OR synced_account_id=$1 THEN $2 ELSE synced_rate_multiplier END,
+		synced_at=CASE WHEN synced_account_id IS NULL OR synced_account_id=$1 THEN $3 ELSE synced_at END,
+		synced_account_id=COALESCE(synced_account_id,$1), updated_at=NOW()
+		WHERE id=$4 AND deleted_at IS NULL`, accountID, rate, syncedAt, resourceID)
+	if err != nil {
+		return err
+	}
+	if count, _ := updated.RowsAffected(); count == 0 {
+		return service.ErrUpstreamResourceNotFound
+	}
+	return tx.Commit()
 }
 
 func (r *upstreamRepository) ListPaginated(ctx context.Context, page, pageSize int, search string) ([]*service.Upstream, int64, error) {

@@ -37,6 +37,9 @@ import (
 	"github.com/Wei-Shaw/sub2api/ent/setting"
 	"github.com/Wei-Shaw/sub2api/ent/subscriptionplan"
 	"github.com/Wei-Shaw/sub2api/ent/tlsfingerprintprofile"
+	"github.com/Wei-Shaw/sub2api/ent/upstream"
+	"github.com/Wei-Shaw/sub2api/ent/upstreamresource"
+	"github.com/Wei-Shaw/sub2api/ent/upstreamresourceaccount"
 	"github.com/Wei-Shaw/sub2api/ent/usagecleanuptask"
 	"github.com/Wei-Shaw/sub2api/ent/usagelog"
 	"github.com/Wei-Shaw/sub2api/ent/user"
@@ -1929,6 +1932,206 @@ func init() {
 	tlsfingerprintprofileDescEnableGrease := tlsfingerprintprofileFields[2].Descriptor()
 	// tlsfingerprintprofile.DefaultEnableGrease holds the default value on creation for the enable_grease field.
 	tlsfingerprintprofile.DefaultEnableGrease = tlsfingerprintprofileDescEnableGrease.Default.(bool)
+	upstreamMixin := schema.Upstream{}.Mixin()
+	upstreamMixinHooks1 := upstreamMixin[1].Hooks()
+	upstream.Hooks[0] = upstreamMixinHooks1[0]
+	upstreamMixinInters1 := upstreamMixin[1].Interceptors()
+	upstream.Interceptors[0] = upstreamMixinInters1[0]
+	upstreamMixinFields0 := upstreamMixin[0].Fields()
+	_ = upstreamMixinFields0
+	upstreamFields := schema.Upstream{}.Fields()
+	_ = upstreamFields
+	// upstreamDescCreatedAt is the schema descriptor for created_at field.
+	upstreamDescCreatedAt := upstreamMixinFields0[0].Descriptor()
+	// upstream.DefaultCreatedAt holds the default value on creation for the created_at field.
+	upstream.DefaultCreatedAt = upstreamDescCreatedAt.Default.(func() time.Time)
+	// upstreamDescUpdatedAt is the schema descriptor for updated_at field.
+	upstreamDescUpdatedAt := upstreamMixinFields0[1].Descriptor()
+	// upstream.DefaultUpdatedAt holds the default value on creation for the updated_at field.
+	upstream.DefaultUpdatedAt = upstreamDescUpdatedAt.Default.(func() time.Time)
+	// upstream.UpdateDefaultUpdatedAt holds the default value on update for the updated_at field.
+	upstream.UpdateDefaultUpdatedAt = upstreamDescUpdatedAt.UpdateDefault.(func() time.Time)
+	// upstreamDescName is the schema descriptor for name field.
+	upstreamDescName := upstreamFields[0].Descriptor()
+	// upstream.NameValidator is a validator for the "name" field. It is called by the builders before save.
+	upstream.NameValidator = func() func(string) error {
+		validators := upstreamDescName.Validators
+		fns := [...]func(string) error{
+			validators[0].(func(string) error),
+			validators[1].(func(string) error),
+		}
+		return func(name string) error {
+			for _, fn := range fns {
+				if err := fn(name); err != nil {
+					return err
+				}
+			}
+			return nil
+		}
+	}()
+	// upstreamDescSortCode is the schema descriptor for sort_code field.
+	upstreamDescSortCode := upstreamFields[1].Descriptor()
+	// upstream.DefaultSortCode holds the default value on creation for the sort_code field.
+	upstream.DefaultSortCode = upstreamDescSortCode.Default.(int)
+	// upstreamDescKind is the schema descriptor for kind field.
+	upstreamDescKind := upstreamFields[2].Descriptor()
+	// upstream.KindValidator is a validator for the "kind" field. It is called by the builders before save.
+	upstream.KindValidator = func() func(string) error {
+		validators := upstreamDescKind.Validators
+		fns := [...]func(string) error{
+			validators[0].(func(string) error),
+			validators[1].(func(string) error),
+		}
+		return func(kind string) error {
+			for _, fn := range fns {
+				if err := fn(kind); err != nil {
+					return err
+				}
+			}
+			return nil
+		}
+	}()
+	// upstreamDescBaseURL is the schema descriptor for base_url field.
+	upstreamDescBaseURL := upstreamFields[3].Descriptor()
+	// upstream.BaseURLValidator is a validator for the "base_url" field. It is called by the builders before save.
+	upstream.BaseURLValidator = func() func(string) error {
+		validators := upstreamDescBaseURL.Validators
+		fns := [...]func(string) error{
+			validators[0].(func(string) error),
+			validators[1].(func(string) error),
+		}
+		return func(base_url string) error {
+			for _, fn := range fns {
+				if err := fn(base_url); err != nil {
+					return err
+				}
+			}
+			return nil
+		}
+	}()
+	// upstreamDescLoginIdentifier is the schema descriptor for login_identifier field.
+	upstreamDescLoginIdentifier := upstreamFields[8].Descriptor()
+	// upstream.LoginIdentifierValidator is a validator for the "login_identifier" field. It is called by the builders before save.
+	upstream.LoginIdentifierValidator = upstreamDescLoginIdentifier.Validators[0].(func(string) error)
+	// upstreamDescRemoteUserID is the schema descriptor for remote_user_id field.
+	upstreamDescRemoteUserID := upstreamFields[9].Descriptor()
+	// upstream.RemoteUserIDValidator is a validator for the "remote_user_id" field. It is called by the builders before save.
+	upstream.RemoteUserIDValidator = upstreamDescRemoteUserID.Validators[0].(func(string) error)
+	// upstreamDescBalanceSnapshot is the schema descriptor for balance_snapshot field.
+	upstreamDescBalanceSnapshot := upstreamFields[10].Descriptor()
+	// upstream.DefaultBalanceSnapshot holds the default value on creation for the balance_snapshot field.
+	upstream.DefaultBalanceSnapshot = upstreamDescBalanceSnapshot.Default.(map[string]interface{})
+	// upstreamDescGroupSnapshot is the schema descriptor for group_snapshot field.
+	upstreamDescGroupSnapshot := upstreamFields[11].Descriptor()
+	// upstream.DefaultGroupSnapshot holds the default value on creation for the group_snapshot field.
+	upstream.DefaultGroupSnapshot = upstreamDescGroupSnapshot.Default.(map[string]interface{})
+	// upstreamDescEnabled is the schema descriptor for enabled field.
+	upstreamDescEnabled := upstreamFields[13].Descriptor()
+	// upstream.DefaultEnabled holds the default value on creation for the enabled field.
+	upstream.DefaultEnabled = upstreamDescEnabled.Default.(bool)
+	upstreamresourceMixin := schema.UpstreamResource{}.Mixin()
+	upstreamresourceMixinHooks1 := upstreamresourceMixin[1].Hooks()
+	upstreamresource.Hooks[0] = upstreamresourceMixinHooks1[0]
+	upstreamresourceMixinInters1 := upstreamresourceMixin[1].Interceptors()
+	upstreamresource.Interceptors[0] = upstreamresourceMixinInters1[0]
+	upstreamresourceMixinFields0 := upstreamresourceMixin[0].Fields()
+	_ = upstreamresourceMixinFields0
+	upstreamresourceFields := schema.UpstreamResource{}.Fields()
+	_ = upstreamresourceFields
+	// upstreamresourceDescCreatedAt is the schema descriptor for created_at field.
+	upstreamresourceDescCreatedAt := upstreamresourceMixinFields0[0].Descriptor()
+	// upstreamresource.DefaultCreatedAt holds the default value on creation for the created_at field.
+	upstreamresource.DefaultCreatedAt = upstreamresourceDescCreatedAt.Default.(func() time.Time)
+	// upstreamresourceDescUpdatedAt is the schema descriptor for updated_at field.
+	upstreamresourceDescUpdatedAt := upstreamresourceMixinFields0[1].Descriptor()
+	// upstreamresource.DefaultUpdatedAt holds the default value on creation for the updated_at field.
+	upstreamresource.DefaultUpdatedAt = upstreamresourceDescUpdatedAt.Default.(func() time.Time)
+	// upstreamresource.UpdateDefaultUpdatedAt holds the default value on update for the updated_at field.
+	upstreamresource.UpdateDefaultUpdatedAt = upstreamresourceDescUpdatedAt.UpdateDefault.(func() time.Time)
+	// upstreamresourceDescUpstreamID is the schema descriptor for upstream_id field.
+	upstreamresourceDescUpstreamID := upstreamresourceFields[0].Descriptor()
+	// upstreamresource.UpstreamIDValidator is a validator for the "upstream_id" field. It is called by the builders before save.
+	upstreamresource.UpstreamIDValidator = upstreamresourceDescUpstreamID.Validators[0].(func(int64) error)
+	// upstreamresourceDescResourceType is the schema descriptor for resource_type field.
+	upstreamresourceDescResourceType := upstreamresourceFields[1].Descriptor()
+	// upstreamresource.ResourceTypeValidator is a validator for the "resource_type" field. It is called by the builders before save.
+	upstreamresource.ResourceTypeValidator = func() func(string) error {
+		validators := upstreamresourceDescResourceType.Validators
+		fns := [...]func(string) error{
+			validators[0].(func(string) error),
+			validators[1].(func(string) error),
+		}
+		return func(resource_type string) error {
+			for _, fn := range fns {
+				if err := fn(resource_type); err != nil {
+					return err
+				}
+			}
+			return nil
+		}
+	}()
+	// upstreamresourceDescRemoteID is the schema descriptor for remote_id field.
+	upstreamresourceDescRemoteID := upstreamresourceFields[2].Descriptor()
+	// upstreamresource.RemoteIDValidator is a validator for the "remote_id" field. It is called by the builders before save.
+	upstreamresource.RemoteIDValidator = func() func(string) error {
+		validators := upstreamresourceDescRemoteID.Validators
+		fns := [...]func(string) error{
+			validators[0].(func(string) error),
+			validators[1].(func(string) error),
+		}
+		return func(remote_id string) error {
+			for _, fn := range fns {
+				if err := fn(remote_id); err != nil {
+					return err
+				}
+			}
+			return nil
+		}
+	}()
+	// upstreamresourceDescName is the schema descriptor for name field.
+	upstreamresourceDescName := upstreamresourceFields[3].Descriptor()
+	// upstreamresource.NameValidator is a validator for the "name" field. It is called by the builders before save.
+	upstreamresource.NameValidator = upstreamresourceDescName.Validators[0].(func(string) error)
+	// upstreamresourceDescGroupName is the schema descriptor for group_name field.
+	upstreamresourceDescGroupName := upstreamresourceFields[4].Descriptor()
+	// upstreamresource.GroupNameValidator is a validator for the "group_name" field. It is called by the builders before save.
+	upstreamresource.GroupNameValidator = upstreamresourceDescGroupName.Validators[0].(func(string) error)
+	// upstreamresourceDescModelsSnapshot is the schema descriptor for models_snapshot field.
+	upstreamresourceDescModelsSnapshot := upstreamresourceFields[6].Descriptor()
+	// upstreamresource.DefaultModelsSnapshot holds the default value on creation for the models_snapshot field.
+	upstreamresource.DefaultModelsSnapshot = upstreamresourceDescModelsSnapshot.Default.([]string)
+	// upstreamresourceDescEnabled is the schema descriptor for enabled field.
+	upstreamresourceDescEnabled := upstreamresourceFields[11].Descriptor()
+	// upstreamresource.DefaultEnabled holds the default value on creation for the enabled field.
+	upstreamresource.DefaultEnabled = upstreamresourceDescEnabled.Default.(bool)
+	upstreamresourceaccountFields := schema.UpstreamResourceAccount{}.Fields()
+	_ = upstreamresourceaccountFields
+	// upstreamresourceaccountDescResourceID is the schema descriptor for resource_id field.
+	upstreamresourceaccountDescResourceID := upstreamresourceaccountFields[0].Descriptor()
+	// upstreamresourceaccount.ResourceIDValidator is a validator for the "resource_id" field. It is called by the builders before save.
+	upstreamresourceaccount.ResourceIDValidator = upstreamresourceaccountDescResourceID.Validators[0].(func(int64) error)
+	// upstreamresourceaccountDescPlatform is the schema descriptor for platform field.
+	upstreamresourceaccountDescPlatform := upstreamresourceaccountFields[1].Descriptor()
+	// upstreamresourceaccount.PlatformValidator is a validator for the "platform" field. It is called by the builders before save.
+	upstreamresourceaccount.PlatformValidator = func() func(string) error {
+		validators := upstreamresourceaccountDescPlatform.Validators
+		fns := [...]func(string) error{
+			validators[0].(func(string) error),
+			validators[1].(func(string) error),
+		}
+		return func(platform string) error {
+			for _, fn := range fns {
+				if err := fn(platform); err != nil {
+					return err
+				}
+			}
+			return nil
+		}
+	}()
+	// upstreamresourceaccountDescAccountID is the schema descriptor for account_id field.
+	upstreamresourceaccountDescAccountID := upstreamresourceaccountFields[2].Descriptor()
+	// upstreamresourceaccount.AccountIDValidator is a validator for the "account_id" field. It is called by the builders before save.
+	upstreamresourceaccount.AccountIDValidator = upstreamresourceaccountDescAccountID.Validators[0].(func(int64) error)
 	usagecleanuptaskMixin := schema.UsageCleanupTask{}.Mixin()
 	usagecleanuptaskMixinFields0 := usagecleanuptaskMixin[0].Fields()
 	_ = usagecleanuptaskMixinFields0

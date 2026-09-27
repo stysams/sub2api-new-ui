@@ -472,7 +472,19 @@
                             <Icon name="cube" size="xs" class="text-gray-400" />
                             {{ resource.models_snapshot.length }} {{ t('admin.upstreams.models') }}
                           </span>
+                          <template v-if="resource.synced_accounts?.length">
+                            <span
+                              v-for="account in resource.synced_accounts"
+                              :key="account.platform"
+                              class="inline-flex items-center gap-1 whitespace-nowrap rounded-full bg-green-50 px-2 py-0.5 text-xs font-medium text-green-700 dark:bg-green-900/20 dark:text-green-400"
+                            >
+                              <Icon name="checkCircle" size="xs" />
+                              <span class="sr-only">{{ t('admin.upstreams.synced') }}</span>
+                              {{ platformLabel(account.platform) }} #{{ account.account_id }}
+                            </span>
+                          </template>
                           <span
+                            v-else
                             :class="[
                               'inline-flex items-center gap-1 rounded-full px-2 py-0.5 text-xs font-medium',
                               resource.synced_account_id
@@ -481,11 +493,7 @@
                             ]"
                           >
                             <Icon :name="resource.synced_account_id ? 'checkCircle' : 'exclamationCircle'" size="xs" />
-                            {{
-                              resource.synced_account_id
-                                ? `${t('admin.upstreams.synced')} #${resource.synced_account_id}`
-                                : t('admin.upstreams.unsynced')
-                            }}
+                            {{ resource.synced_account_id ? `${t('admin.upstreams.synced')} #${resource.synced_account_id}` : t('admin.upstreams.unsynced') }}
                           </span>
                         </div>
                       </div>
@@ -839,19 +847,27 @@
           {{ selectedResource?.name }}
         </p>
 
-        <div v-if="localGroups.length" class="grid max-h-72 gap-2 overflow-y-auto sm:grid-cols-2">
-          <label
-            v-for="group in localGroups"
-            :key="group.id"
-            class="flex cursor-pointer items-center gap-2 rounded-lg border border-gray-200 px-3 py-2 text-sm transition-colors hover:border-gray-300 dark:border-dark-700 dark:hover:border-dark-600"
-          >
-            <input
-              v-model="syncGroupIds"
-              type="checkbox"
-              :value="group.id"
-            />
-            {{ group.name }}
-          </label>
+        <div v-if="syncGroupsByPlatform.length" class="max-h-72 space-y-4 overflow-y-auto pr-1">
+          <fieldset v-for="section in syncGroupsByPlatform" :key="section.platform">
+            <legend class="mb-2 text-sm font-semibold text-gray-700 dark:text-gray-200">
+              {{ section.label }}
+            </legend>
+            <div class="grid gap-2 sm:grid-cols-2">
+              <label
+                v-for="group in section.groups"
+                :key="group.id"
+                class="flex min-w-0 cursor-pointer items-center gap-2 rounded-lg border border-gray-200 px-3 py-2 text-sm transition-colors hover:border-gray-300 focus-within:border-primary-500 dark:border-dark-700 dark:hover:border-dark-600"
+              >
+                <input
+                  v-model="syncGroupIds"
+                  type="checkbox"
+                  :value="group.id"
+                  class="shrink-0"
+                />
+                <span class="min-w-0 break-words">{{ group.name }}</span>
+              </label>
+            </div>
+          </fieldset>
         </div>
         <p v-else class="py-4 text-center text-sm text-gray-500">
           {{ t('common.noGroupsAvailable') }}
@@ -979,6 +995,7 @@ import ConfirmDialog from '@/components/common/ConfirmDialog.vue'
 import Icon from '@/components/icons/Icon.vue'
 import AppLayout from '@/components/layout/AppLayout.vue'
 import { adminAPI } from '@/api'
+import { CONCRETE_PLATFORM_OPTIONS } from '@/constants/platforms'
 import { useAppStore } from '@/stores/app'
 import { useUpstreamChat } from '@/composables/useUpstreamChat'
 import type {
@@ -1068,6 +1085,17 @@ const showSyncDialog = ref(false)
 const selectedResource = ref<UpstreamResource | null>(null)
 const localGroups = ref<AdminGroup[]>([])
 const syncGroupIds = ref<number[]>([])
+const syncGroupsByPlatform = computed(() => CONCRETE_PLATFORM_OPTIONS
+  .map(option => ({
+    platform: option.value,
+    label: option.label,
+    groups: localGroups.value.filter(group => group.platform === option.value && group.status === 'active' && !group.require_oauth_only)
+  }))
+  .filter(section => section.groups.length > 0))
+
+function platformLabel(platform: string): string {
+  return CONCRETE_PLATFORM_OPTIONS.find(option => option.value === platform)?.label ?? platform
+}
 
 // ── Chat Dialog State ───────────────────────────────────────
 
@@ -1614,10 +1642,17 @@ async function submitSync() {
       selectedResource.value.id,
       syncGroupIds.value
     )
-    showSyncDialog.value = false
-    appStore.showSuccess(
-      `${t('admin.upstreams.syncDone')}: ${result.created + result.updated}`
-    )
+    showSyncDialog.value = result.failed > 0
+    if (result.failed) {
+      const failure = result.items.find(item => item.status === 'failed')
+      appStore.showWarning(t('admin.upstreams.syncPartial', {
+        succeeded: result.created + result.updated + result.skipped,
+        failed: result.failed,
+        reason: failure ? `${platformLabel(failure.platform)}: ${failure.message}` : ''
+      }))
+    } else {
+      appStore.showSuccess(`${t('admin.upstreams.syncDone')}: ${result.created + result.updated + result.skipped}`)
+    }
     const upstream = upstreams.value.find(
       item => item.id === selectedResource.value?.upstream_id
     )

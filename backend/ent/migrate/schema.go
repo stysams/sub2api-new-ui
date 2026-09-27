@@ -1595,6 +1595,127 @@ var (
 		Columns:    TLSFingerprintProfilesColumns,
 		PrimaryKey: []*schema.Column{TLSFingerprintProfilesColumns[0]},
 	}
+	// UpstreamsColumns holds the columns for the "upstreams" table.
+	UpstreamsColumns = []*schema.Column{
+		{Name: "id", Type: field.TypeInt64, Increment: true},
+		{Name: "created_at", Type: field.TypeTime, SchemaType: map[string]string{"postgres": "timestamptz"}},
+		{Name: "updated_at", Type: field.TypeTime, SchemaType: map[string]string{"postgres": "timestamptz"}},
+		{Name: "deleted_at", Type: field.TypeTime, Nullable: true, SchemaType: map[string]string{"postgres": "timestamptz"}},
+		{Name: "name", Type: field.TypeString, Size: 100},
+		{Name: "sort_code", Type: field.TypeInt, Default: 0},
+		{Name: "kind", Type: field.TypeString, Size: 20},
+		{Name: "base_url", Type: field.TypeString, Size: 500},
+		{Name: "token_encrypted", Type: field.TypeString},
+		{Name: "refresh_token_encrypted", Type: field.TypeString, Nullable: true},
+		{Name: "password_encrypted", Type: field.TypeString, Nullable: true},
+		{Name: "token_expires_at", Type: field.TypeTime, Nullable: true},
+		{Name: "login_identifier", Type: field.TypeString, Nullable: true, Size: 200},
+		{Name: "remote_user_id", Type: field.TypeString, Nullable: true, Size: 100},
+		{Name: "balance_snapshot", Type: field.TypeJSON, SchemaType: map[string]string{"postgres": "jsonb"}},
+		{Name: "group_snapshot", Type: field.TypeJSON, SchemaType: map[string]string{"postgres": "jsonb"}},
+		{Name: "notes", Type: field.TypeString, Nullable: true, SchemaType: map[string]string{"postgres": "text"}},
+		{Name: "enabled", Type: field.TypeBool, Default: true},
+		{Name: "last_checked_at", Type: field.TypeTime, Nullable: true},
+		{Name: "last_error", Type: field.TypeString, Nullable: true, SchemaType: map[string]string{"postgres": "text"}},
+		{Name: "created_by", Type: field.TypeInt64},
+	}
+	// UpstreamsTable holds the schema information for the "upstreams" table.
+	UpstreamsTable = &schema.Table{
+		Name:       "upstreams",
+		Columns:    UpstreamsColumns,
+		PrimaryKey: []*schema.Column{UpstreamsColumns[0]},
+		Indexes: []*schema.Index{
+			{
+				Name:    "upstream_kind",
+				Unique:  false,
+				Columns: []*schema.Column{UpstreamsColumns[6]},
+			},
+			{
+				Name:    "upstream_enabled",
+				Unique:  false,
+				Columns: []*schema.Column{UpstreamsColumns[17]},
+			},
+			{
+				Name:    "upstream_last_checked_at",
+				Unique:  false,
+				Columns: []*schema.Column{UpstreamsColumns[18]},
+			},
+		},
+	}
+	// UpstreamResourcesColumns holds the columns for the "upstream_resources" table.
+	UpstreamResourcesColumns = []*schema.Column{
+		{Name: "id", Type: field.TypeInt64, Increment: true},
+		{Name: "created_at", Type: field.TypeTime, SchemaType: map[string]string{"postgres": "timestamptz"}},
+		{Name: "updated_at", Type: field.TypeTime, SchemaType: map[string]string{"postgres": "timestamptz"}},
+		{Name: "deleted_at", Type: field.TypeTime, Nullable: true, SchemaType: map[string]string{"postgres": "timestamptz"}},
+		{Name: "upstream_id", Type: field.TypeInt64},
+		{Name: "resource_type", Type: field.TypeString, Size: 20},
+		{Name: "remote_id", Type: field.TypeString, Size: 100},
+		{Name: "name", Type: field.TypeString, Size: 200},
+		{Name: "group_name", Type: field.TypeString, Nullable: true, Size: 200},
+		{Name: "key_encrypted", Type: field.TypeString},
+		{Name: "models_snapshot", Type: field.TypeJSON, SchemaType: map[string]string{"postgres": "jsonb"}},
+		{Name: "models_fetched_at", Type: field.TypeTime, Nullable: true},
+		{Name: "synced_account_id", Type: field.TypeInt64, Nullable: true},
+		{Name: "synced_rate_multiplier", Type: field.TypeFloat64, Nullable: true},
+		{Name: "synced_at", Type: field.TypeTime, Nullable: true},
+		{Name: "enabled", Type: field.TypeBool, Default: true},
+	}
+	// UpstreamResourcesTable holds the schema information for the "upstream_resources" table.
+	UpstreamResourcesTable = &schema.Table{
+		Name:       "upstream_resources",
+		Columns:    UpstreamResourcesColumns,
+		PrimaryKey: []*schema.Column{UpstreamResourcesColumns[0]},
+		Indexes: []*schema.Index{
+			{
+				Name:    "upstreamresource_upstream_id",
+				Unique:  false,
+				Columns: []*schema.Column{UpstreamResourcesColumns[4]},
+			},
+			{
+				Name:    "upstreamresource_upstream_id_resource_type",
+				Unique:  false,
+				Columns: []*schema.Column{UpstreamResourcesColumns[4], UpstreamResourcesColumns[5]},
+			},
+			{
+				Name:    "upstreamresource_synced_account_id",
+				Unique:  false,
+				Columns: []*schema.Column{UpstreamResourcesColumns[12]},
+			},
+			{
+				Name:    "upstreamresource_upstream_id_resource_type_remote_id",
+				Unique:  true,
+				Columns: []*schema.Column{UpstreamResourcesColumns[4], UpstreamResourcesColumns[5], UpstreamResourcesColumns[6]},
+			},
+		},
+	}
+	// UpstreamResourceAccountsColumns holds the columns for the "upstream_resource_accounts" table.
+	UpstreamResourceAccountsColumns = []*schema.Column{
+		{Name: "id", Type: field.TypeInt64, Increment: true},
+		{Name: "resource_id", Type: field.TypeInt64},
+		{Name: "platform", Type: field.TypeString, Size: 50},
+		{Name: "account_id", Type: field.TypeInt64},
+		{Name: "rate_multiplier", Type: field.TypeFloat64},
+		{Name: "synced_at", Type: field.TypeTime, SchemaType: map[string]string{"postgres": "timestamptz"}},
+	}
+	// UpstreamResourceAccountsTable holds the schema information for the "upstream_resource_accounts" table.
+	UpstreamResourceAccountsTable = &schema.Table{
+		Name:       "upstream_resource_accounts",
+		Columns:    UpstreamResourceAccountsColumns,
+		PrimaryKey: []*schema.Column{UpstreamResourceAccountsColumns[0]},
+		Indexes: []*schema.Index{
+			{
+				Name:    "upstreamresourceaccount_resource_id_platform",
+				Unique:  true,
+				Columns: []*schema.Column{UpstreamResourceAccountsColumns[1], UpstreamResourceAccountsColumns[2]},
+			},
+			{
+				Name:    "upstreamresourceaccount_account_id",
+				Unique:  true,
+				Columns: []*schema.Column{UpstreamResourceAccountsColumns[3]},
+			},
+		},
+	}
 	// UsageCleanupTasksColumns holds the columns for the "usage_cleanup_tasks" table.
 	UsageCleanupTasksColumns = []*schema.Column{
 		{Name: "id", Type: field.TypeInt64, Increment: true},
@@ -2119,6 +2240,9 @@ var (
 		SettingsTable,
 		SubscriptionPlansTable,
 		TLSFingerprintProfilesTable,
+		UpstreamsTable,
+		UpstreamResourcesTable,
+		UpstreamResourceAccountsTable,
 		UsageCleanupTasksTable,
 		UsageLogsTable,
 		UsersTable,
@@ -2246,6 +2370,15 @@ func init() {
 	}
 	TLSFingerprintProfilesTable.Annotation = &entsql.Annotation{
 		Table: "tls_fingerprint_profiles",
+	}
+	UpstreamsTable.Annotation = &entsql.Annotation{
+		Table: "upstreams",
+	}
+	UpstreamResourcesTable.Annotation = &entsql.Annotation{
+		Table: "upstream_resources",
+	}
+	UpstreamResourceAccountsTable.Annotation = &entsql.Annotation{
+		Table: "upstream_resource_accounts",
 	}
 	UsageCleanupTasksTable.Annotation = &entsql.Annotation{
 		Table: "usage_cleanup_tasks",

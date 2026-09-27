@@ -63,6 +63,7 @@ export default {
     keyCreated: 'Key created',
     modelsUpdated: 'Model list updated',
     syncDone: 'Sync completed',
+    syncPartial: '{succeeded} succeeded, {failed} failed. {reason}',
     missingForm: 'Name and site URL are required',
     missingLogin: 'Enter login credentials or an existing access token',
     missingRemoteUserId: 'A user ID is required with a new-api access token',

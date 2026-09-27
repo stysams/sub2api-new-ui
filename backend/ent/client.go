@@ -46,6 +46,9 @@ import (
 	"github.com/Wei-Shaw/sub2api/ent/setting"
 	"github.com/Wei-Shaw/sub2api/ent/subscriptionplan"
 	"github.com/Wei-Shaw/sub2api/ent/tlsfingerprintprofile"
+	"github.com/Wei-Shaw/sub2api/ent/upstream"
+	"github.com/Wei-Shaw/sub2api/ent/upstreamresource"
+	"github.com/Wei-Shaw/sub2api/ent/upstreamresourceaccount"
 	"github.com/Wei-Shaw/sub2api/ent/usagecleanuptask"
 	"github.com/Wei-Shaw/sub2api/ent/usagelog"
 	"github.com/Wei-Shaw/sub2api/ent/user"
@@ -125,6 +128,12 @@ type Client struct {
 	SubscriptionPlan *SubscriptionPlanClient
 	// TLSFingerprintProfile is the client for interacting with the TLSFingerprintProfile builders.
 	TLSFingerprintProfile *TLSFingerprintProfileClient
+	// Upstream is the client for interacting with the Upstream builders.
+	Upstream *UpstreamClient
+	// UpstreamResource is the client for interacting with the UpstreamResource builders.
+	UpstreamResource *UpstreamResourceClient
+	// UpstreamResourceAccount is the client for interacting with the UpstreamResourceAccount builders.
+	UpstreamResourceAccount *UpstreamResourceAccountClient
 	// UsageCleanupTask is the client for interacting with the UsageCleanupTask builders.
 	UsageCleanupTask *UsageCleanupTaskClient
 	// UsageLog is the client for interacting with the UsageLog builders.
@@ -183,6 +192,9 @@ func (c *Client) init() {
 	c.Setting = NewSettingClient(c.config)
 	c.SubscriptionPlan = NewSubscriptionPlanClient(c.config)
 	c.TLSFingerprintProfile = NewTLSFingerprintProfileClient(c.config)
+	c.Upstream = NewUpstreamClient(c.config)
+	c.UpstreamResource = NewUpstreamResourceClient(c.config)
+	c.UpstreamResourceAccount = NewUpstreamResourceAccountClient(c.config)
 	c.UsageCleanupTask = NewUsageCleanupTaskClient(c.config)
 	c.UsageLog = NewUsageLogClient(c.config)
 	c.User = NewUserClient(c.config)
@@ -314,6 +326,9 @@ func (c *Client) Tx(ctx context.Context) (*Tx, error) {
 		Setting:                       NewSettingClient(cfg),
 		SubscriptionPlan:              NewSubscriptionPlanClient(cfg),
 		TLSFingerprintProfile:         NewTLSFingerprintProfileClient(cfg),
+		Upstream:                      NewUpstreamClient(cfg),
+		UpstreamResource:              NewUpstreamResourceClient(cfg),
+		UpstreamResourceAccount:       NewUpstreamResourceAccountClient(cfg),
 		UsageCleanupTask:              NewUsageCleanupTaskClient(cfg),
 		UsageLog:                      NewUsageLogClient(cfg),
 		User:                          NewUserClient(cfg),
@@ -372,6 +387,9 @@ func (c *Client) BeginTx(ctx context.Context, opts *sql.TxOptions) (*Tx, error) 
 		Setting:                       NewSettingClient(cfg),
 		SubscriptionPlan:              NewSubscriptionPlanClient(cfg),
 		TLSFingerprintProfile:         NewTLSFingerprintProfileClient(cfg),
+		Upstream:                      NewUpstreamClient(cfg),
+		UpstreamResource:              NewUpstreamResourceClient(cfg),
+		UpstreamResourceAccount:       NewUpstreamResourceAccountClient(cfg),
 		UsageCleanupTask:              NewUsageCleanupTaskClient(cfg),
 		UsageLog:                      NewUsageLogClient(cfg),
 		User:                          NewUserClient(cfg),
@@ -417,7 +435,8 @@ func (c *Client) Use(hooks ...Hook) {
 		c.IdentityAdoptionDecision, c.PaymentAuditLog, c.PaymentOrder,
 		c.PaymentProviderInstance, c.PendingAuthSession, c.PromoCode, c.PromoCodeUsage,
 		c.Proxy, c.RedeemCode, c.SecuritySecret, c.Setting, c.SubscriptionPlan,
-		c.TLSFingerprintProfile, c.UsageCleanupTask, c.UsageLog, c.User,
+		c.TLSFingerprintProfile, c.Upstream, c.UpstreamResource,
+		c.UpstreamResourceAccount, c.UsageCleanupTask, c.UsageLog, c.User,
 		c.UserAllowedGroup, c.UserAttributeDefinition, c.UserAttributeValue,
 		c.UserPlatformQuota, c.UserSubscription,
 	} {
@@ -437,7 +456,8 @@ func (c *Client) Intercept(interceptors ...Interceptor) {
 		c.IdentityAdoptionDecision, c.PaymentAuditLog, c.PaymentOrder,
 		c.PaymentProviderInstance, c.PendingAuthSession, c.PromoCode, c.PromoCodeUsage,
 		c.Proxy, c.RedeemCode, c.SecuritySecret, c.Setting, c.SubscriptionPlan,
-		c.TLSFingerprintProfile, c.UsageCleanupTask, c.UsageLog, c.User,
+		c.TLSFingerprintProfile, c.Upstream, c.UpstreamResource,
+		c.UpstreamResourceAccount, c.UsageCleanupTask, c.UsageLog, c.User,
 		c.UserAllowedGroup, c.UserAttributeDefinition, c.UserAttributeValue,
 		c.UserPlatformQuota, c.UserSubscription,
 	} {
@@ -510,6 +530,12 @@ func (c *Client) Mutate(ctx context.Context, m Mutation) (Value, error) {
 		return c.SubscriptionPlan.mutate(ctx, m)
 	case *TLSFingerprintProfileMutation:
 		return c.TLSFingerprintProfile.mutate(ctx, m)
+	case *UpstreamMutation:
+		return c.Upstream.mutate(ctx, m)
+	case *UpstreamResourceMutation:
+		return c.UpstreamResource.mutate(ctx, m)
+	case *UpstreamResourceAccountMutation:
+		return c.UpstreamResourceAccount.mutate(ctx, m)
 	case *UsageCleanupTaskMutation:
 		return c.UsageCleanupTask.mutate(ctx, m)
 	case *UsageLogMutation:
@@ -5351,6 +5377,409 @@ func (c *TLSFingerprintProfileClient) mutate(ctx context.Context, m *TLSFingerpr
 	}
 }
 
+// UpstreamClient is a client for the Upstream schema.
+type UpstreamClient struct {
+	config
+}
+
+// NewUpstreamClient returns a client for the Upstream from the given config.
+func NewUpstreamClient(c config) *UpstreamClient {
+	return &UpstreamClient{config: c}
+}
+
+// Use adds a list of mutation hooks to the hooks stack.
+// A call to `Use(f, g, h)` equals to `upstream.Hooks(f(g(h())))`.
+func (c *UpstreamClient) Use(hooks ...Hook) {
+	c.hooks.Upstream = append(c.hooks.Upstream, hooks...)
+}
+
+// Intercept adds a list of query interceptors to the interceptors stack.
+// A call to `Intercept(f, g, h)` equals to `upstream.Intercept(f(g(h())))`.
+func (c *UpstreamClient) Intercept(interceptors ...Interceptor) {
+	c.inters.Upstream = append(c.inters.Upstream, interceptors...)
+}
+
+// Create returns a builder for creating a Upstream entity.
+func (c *UpstreamClient) Create() *UpstreamCreate {
+	mutation := newUpstreamMutation(c.config, OpCreate)
+	return &UpstreamCreate{config: c.config, hooks: c.Hooks(), mutation: mutation}
+}
+
+// CreateBulk returns a builder for creating a bulk of Upstream entities.
+func (c *UpstreamClient) CreateBulk(builders ...*UpstreamCreate) *UpstreamCreateBulk {
+	return &UpstreamCreateBulk{config: c.config, builders: builders}
+}
+
+// MapCreateBulk creates a bulk creation builder from the given slice. For each item in the slice, the function creates
+// a builder and applies setFunc on it.
+func (c *UpstreamClient) MapCreateBulk(slice any, setFunc func(*UpstreamCreate, int)) *UpstreamCreateBulk {
+	rv := reflect.ValueOf(slice)
+	if rv.Kind() != reflect.Slice {
+		return &UpstreamCreateBulk{err: fmt.Errorf("calling to UpstreamClient.MapCreateBulk with wrong type %T, need slice", slice)}
+	}
+	builders := make([]*UpstreamCreate, rv.Len())
+	for i := 0; i < rv.Len(); i++ {
+		builders[i] = c.Create()
+		setFunc(builders[i], i)
+	}
+	return &UpstreamCreateBulk{config: c.config, builders: builders}
+}
+
+// Update returns an update builder for Upstream.
+func (c *UpstreamClient) Update() *UpstreamUpdate {
+	mutation := newUpstreamMutation(c.config, OpUpdate)
+	return &UpstreamUpdate{config: c.config, hooks: c.Hooks(), mutation: mutation}
+}
+
+// UpdateOne returns an update builder for the given entity.
+func (c *UpstreamClient) UpdateOne(_m *Upstream) *UpstreamUpdateOne {
+	mutation := newUpstreamMutation(c.config, OpUpdateOne, withUpstream(_m))
+	return &UpstreamUpdateOne{config: c.config, hooks: c.Hooks(), mutation: mutation}
+}
+
+// UpdateOneID returns an update builder for the given id.
+func (c *UpstreamClient) UpdateOneID(id int64) *UpstreamUpdateOne {
+	mutation := newUpstreamMutation(c.config, OpUpdateOne, withUpstreamID(id))
+	return &UpstreamUpdateOne{config: c.config, hooks: c.Hooks(), mutation: mutation}
+}
+
+// Delete returns a delete builder for Upstream.
+func (c *UpstreamClient) Delete() *UpstreamDelete {
+	mutation := newUpstreamMutation(c.config, OpDelete)
+	return &UpstreamDelete{config: c.config, hooks: c.Hooks(), mutation: mutation}
+}
+
+// DeleteOne returns a builder for deleting the given entity.
+func (c *UpstreamClient) DeleteOne(_m *Upstream) *UpstreamDeleteOne {
+	return c.DeleteOneID(_m.ID)
+}
+
+// DeleteOneID returns a builder for deleting the given entity by its id.
+func (c *UpstreamClient) DeleteOneID(id int64) *UpstreamDeleteOne {
+	builder := c.Delete().Where(upstream.ID(id))
+	builder.mutation.id = &id
+	builder.mutation.op = OpDeleteOne
+	return &UpstreamDeleteOne{builder}
+}
+
+// Query returns a query builder for Upstream.
+func (c *UpstreamClient) Query() *UpstreamQuery {
+	return &UpstreamQuery{
+		config: c.config,
+		ctx:    &QueryContext{Type: TypeUpstream},
+		inters: c.Interceptors(),
+	}
+}
+
+// Get returns a Upstream entity by its id.
+func (c *UpstreamClient) Get(ctx context.Context, id int64) (*Upstream, error) {
+	return c.Query().Where(upstream.ID(id)).Only(ctx)
+}
+
+// GetX is like Get, but panics if an error occurs.
+func (c *UpstreamClient) GetX(ctx context.Context, id int64) *Upstream {
+	obj, err := c.Get(ctx, id)
+	if err != nil {
+		panic(err)
+	}
+	return obj
+}
+
+// Hooks returns the client hooks.
+func (c *UpstreamClient) Hooks() []Hook {
+	hooks := c.hooks.Upstream
+	return append(hooks[:len(hooks):len(hooks)], upstream.Hooks[:]...)
+}
+
+// Interceptors returns the client interceptors.
+func (c *UpstreamClient) Interceptors() []Interceptor {
+	inters := c.inters.Upstream
+	return append(inters[:len(inters):len(inters)], upstream.Interceptors[:]...)
+}
+
+func (c *UpstreamClient) mutate(ctx context.Context, m *UpstreamMutation) (Value, error) {
+	switch m.Op() {
+	case OpCreate:
+		return (&UpstreamCreate{config: c.config, hooks: c.Hooks(), mutation: m}).Save(ctx)
+	case OpUpdate:
+		return (&UpstreamUpdate{config: c.config, hooks: c.Hooks(), mutation: m}).Save(ctx)
+	case OpUpdateOne:
+		return (&UpstreamUpdateOne{config: c.config, hooks: c.Hooks(), mutation: m}).Save(ctx)
+	case OpDelete, OpDeleteOne:
+		return (&UpstreamDelete{config: c.config, hooks: c.Hooks(), mutation: m}).Exec(ctx)
+	default:
+		return nil, fmt.Errorf("ent: unknown Upstream mutation op: %q", m.Op())
+	}
+}
+
+// UpstreamResourceClient is a client for the UpstreamResource schema.
+type UpstreamResourceClient struct {
+	config
+}
+
+// NewUpstreamResourceClient returns a client for the UpstreamResource from the given config.
+func NewUpstreamResourceClient(c config) *UpstreamResourceClient {
+	return &UpstreamResourceClient{config: c}
+}
+
+// Use adds a list of mutation hooks to the hooks stack.
+// A call to `Use(f, g, h)` equals to `upstreamresource.Hooks(f(g(h())))`.
+func (c *UpstreamResourceClient) Use(hooks ...Hook) {
+	c.hooks.UpstreamResource = append(c.hooks.UpstreamResource, hooks...)
+}
+
+// Intercept adds a list of query interceptors to the interceptors stack.
+// A call to `Intercept(f, g, h)` equals to `upstreamresource.Intercept(f(g(h())))`.
+func (c *UpstreamResourceClient) Intercept(interceptors ...Interceptor) {
+	c.inters.UpstreamResource = append(c.inters.UpstreamResource, interceptors...)
+}
+
+// Create returns a builder for creating a UpstreamResource entity.
+func (c *UpstreamResourceClient) Create() *UpstreamResourceCreate {
+	mutation := newUpstreamResourceMutation(c.config, OpCreate)
+	return &UpstreamResourceCreate{config: c.config, hooks: c.Hooks(), mutation: mutation}
+}
+
+// CreateBulk returns a builder for creating a bulk of UpstreamResource entities.
+func (c *UpstreamResourceClient) CreateBulk(builders ...*UpstreamResourceCreate) *UpstreamResourceCreateBulk {
+	return &UpstreamResourceCreateBulk{config: c.config, builders: builders}
+}
+
+// MapCreateBulk creates a bulk creation builder from the given slice. For each item in the slice, the function creates
+// a builder and applies setFunc on it.
+func (c *UpstreamResourceClient) MapCreateBulk(slice any, setFunc func(*UpstreamResourceCreate, int)) *UpstreamResourceCreateBulk {
+	rv := reflect.ValueOf(slice)
+	if rv.Kind() != reflect.Slice {
+		return &UpstreamResourceCreateBulk{err: fmt.Errorf("calling to UpstreamResourceClient.MapCreateBulk with wrong type %T, need slice", slice)}
+	}
+	builders := make([]*UpstreamResourceCreate, rv.Len())
+	for i := 0; i < rv.Len(); i++ {
+		builders[i] = c.Create()
+		setFunc(builders[i], i)
+	}
+	return &UpstreamResourceCreateBulk{config: c.config, builders: builders}
+}
+
+// Update returns an update builder for UpstreamResource.
+func (c *UpstreamResourceClient) Update() *UpstreamResourceUpdate {
+	mutation := newUpstreamResourceMutation(c.config, OpUpdate)
+	return &UpstreamResourceUpdate{config: c.config, hooks: c.Hooks(), mutation: mutation}
+}
+
+// UpdateOne returns an update builder for the given entity.
+func (c *UpstreamResourceClient) UpdateOne(_m *UpstreamResource) *UpstreamResourceUpdateOne {
+	mutation := newUpstreamResourceMutation(c.config, OpUpdateOne, withUpstreamResource(_m))
+	return &UpstreamResourceUpdateOne{config: c.config, hooks: c.Hooks(), mutation: mutation}
+}
+
+// UpdateOneID returns an update builder for the given id.
+func (c *UpstreamResourceClient) UpdateOneID(id int64) *UpstreamResourceUpdateOne {
+	mutation := newUpstreamResourceMutation(c.config, OpUpdateOne, withUpstreamResourceID(id))
+	return &UpstreamResourceUpdateOne{config: c.config, hooks: c.Hooks(), mutation: mutation}
+}
+
+// Delete returns a delete builder for UpstreamResource.
+func (c *UpstreamResourceClient) Delete() *UpstreamResourceDelete {
+	mutation := newUpstreamResourceMutation(c.config, OpDelete)
+	return &UpstreamResourceDelete{config: c.config, hooks: c.Hooks(), mutation: mutation}
+}
+
+// DeleteOne returns a builder for deleting the given entity.
+func (c *UpstreamResourceClient) DeleteOne(_m *UpstreamResource) *UpstreamResourceDeleteOne {
+	return c.DeleteOneID(_m.ID)
+}
+
+// DeleteOneID returns a builder for deleting the given entity by its id.
+func (c *UpstreamResourceClient) DeleteOneID(id int64) *UpstreamResourceDeleteOne {
+	builder := c.Delete().Where(upstreamresource.ID(id))
+	builder.mutation.id = &id
+	builder.mutation.op = OpDeleteOne
+	return &UpstreamResourceDeleteOne{builder}
+}
+
+// Query returns a query builder for UpstreamResource.
+func (c *UpstreamResourceClient) Query() *UpstreamResourceQuery {
+	return &UpstreamResourceQuery{
+		config: c.config,
+		ctx:    &QueryContext{Type: TypeUpstreamResource},
+		inters: c.Interceptors(),
+	}
+}
+
+// Get returns a UpstreamResource entity by its id.
+func (c *UpstreamResourceClient) Get(ctx context.Context, id int64) (*UpstreamResource, error) {
+	return c.Query().Where(upstreamresource.ID(id)).Only(ctx)
+}
+
+// GetX is like Get, but panics if an error occurs.
+func (c *UpstreamResourceClient) GetX(ctx context.Context, id int64) *UpstreamResource {
+	obj, err := c.Get(ctx, id)
+	if err != nil {
+		panic(err)
+	}
+	return obj
+}
+
+// Hooks returns the client hooks.
+func (c *UpstreamResourceClient) Hooks() []Hook {
+	hooks := c.hooks.UpstreamResource
+	return append(hooks[:len(hooks):len(hooks)], upstreamresource.Hooks[:]...)
+}
+
+// Interceptors returns the client interceptors.
+func (c *UpstreamResourceClient) Interceptors() []Interceptor {
+	inters := c.inters.UpstreamResource
+	return append(inters[:len(inters):len(inters)], upstreamresource.Interceptors[:]...)
+}
+
+func (c *UpstreamResourceClient) mutate(ctx context.Context, m *UpstreamResourceMutation) (Value, error) {
+	switch m.Op() {
+	case OpCreate:
+		return (&UpstreamResourceCreate{config: c.config, hooks: c.Hooks(), mutation: m}).Save(ctx)
+	case OpUpdate:
+		return (&UpstreamResourceUpdate{config: c.config, hooks: c.Hooks(), mutation: m}).Save(ctx)
+	case OpUpdateOne:
+		return (&UpstreamResourceUpdateOne{config: c.config, hooks: c.Hooks(), mutation: m}).Save(ctx)
+	case OpDelete, OpDeleteOne:
+		return (&UpstreamResourceDelete{config: c.config, hooks: c.Hooks(), mutation: m}).Exec(ctx)
+	default:
+		return nil, fmt.Errorf("ent: unknown UpstreamResource mutation op: %q", m.Op())
+	}
+}
+
+// UpstreamResourceAccountClient is a client for the UpstreamResourceAccount schema.
+type UpstreamResourceAccountClient struct {
+	config
+}
+
+// NewUpstreamResourceAccountClient returns a client for the UpstreamResourceAccount from the given config.
+func NewUpstreamResourceAccountClient(c config) *UpstreamResourceAccountClient {
+	return &UpstreamResourceAccountClient{config: c}
+}
+
+// Use adds a list of mutation hooks to the hooks stack.
+// A call to `Use(f, g, h)` equals to `upstreamresourceaccount.Hooks(f(g(h())))`.
+func (c *UpstreamResourceAccountClient) Use(hooks ...Hook) {
+	c.hooks.UpstreamResourceAccount = append(c.hooks.UpstreamResourceAccount, hooks...)
+}
+
+// Intercept adds a list of query interceptors to the interceptors stack.
+// A call to `Intercept(f, g, h)` equals to `upstreamresourceaccount.Intercept(f(g(h())))`.
+func (c *UpstreamResourceAccountClient) Intercept(interceptors ...Interceptor) {
+	c.inters.UpstreamResourceAccount = append(c.inters.UpstreamResourceAccount, interceptors...)
+}
+
+// Create returns a builder for creating a UpstreamResourceAccount entity.
+func (c *UpstreamResourceAccountClient) Create() *UpstreamResourceAccountCreate {
+	mutation := newUpstreamResourceAccountMutation(c.config, OpCreate)
+	return &UpstreamResourceAccountCreate{config: c.config, hooks: c.Hooks(), mutation: mutation}
+}
+
+// CreateBulk returns a builder for creating a bulk of UpstreamResourceAccount entities.
+func (c *UpstreamResourceAccountClient) CreateBulk(builders ...*UpstreamResourceAccountCreate) *UpstreamResourceAccountCreateBulk {
+	return &UpstreamResourceAccountCreateBulk{config: c.config, builders: builders}
+}
+
+// MapCreateBulk creates a bulk creation builder from the given slice. For each item in the slice, the function creates
+// a builder and applies setFunc on it.
+func (c *UpstreamResourceAccountClient) MapCreateBulk(slice any, setFunc func(*UpstreamResourceAccountCreate, int)) *UpstreamResourceAccountCreateBulk {
+	rv := reflect.ValueOf(slice)
+	if rv.Kind() != reflect.Slice {
+		return &UpstreamResourceAccountCreateBulk{err: fmt.Errorf("calling to UpstreamResourceAccountClient.MapCreateBulk with wrong type %T, need slice", slice)}
+	}
+	builders := make([]*UpstreamResourceAccountCreate, rv.Len())
+	for i := 0; i < rv.Len(); i++ {
+		builders[i] = c.Create()
+		setFunc(builders[i], i)
+	}
+	return &UpstreamResourceAccountCreateBulk{config: c.config, builders: builders}
+}
+
+// Update returns an update builder for UpstreamResourceAccount.
+func (c *UpstreamResourceAccountClient) Update() *UpstreamResourceAccountUpdate {
+	mutation := newUpstreamResourceAccountMutation(c.config, OpUpdate)
+	return &UpstreamResourceAccountUpdate{config: c.config, hooks: c.Hooks(), mutation: mutation}
+}
+
+// UpdateOne returns an update builder for the given entity.
+func (c *UpstreamResourceAccountClient) UpdateOne(_m *UpstreamResourceAccount) *UpstreamResourceAccountUpdateOne {
+	mutation := newUpstreamResourceAccountMutation(c.config, OpUpdateOne, withUpstreamResourceAccount(_m))
+	return &UpstreamResourceAccountUpdateOne{config: c.config, hooks: c.Hooks(), mutation: mutation}
+}
+
+// UpdateOneID returns an update builder for the given id.
+func (c *UpstreamResourceAccountClient) UpdateOneID(id int64) *UpstreamResourceAccountUpdateOne {
+	mutation := newUpstreamResourceAccountMutation(c.config, OpUpdateOne, withUpstreamResourceAccountID(id))
+	return &UpstreamResourceAccountUpdateOne{config: c.config, hooks: c.Hooks(), mutation: mutation}
+}
+
+// Delete returns a delete builder for UpstreamResourceAccount.
+func (c *UpstreamResourceAccountClient) Delete() *UpstreamResourceAccountDelete {
+	mutation := newUpstreamResourceAccountMutation(c.config, OpDelete)
+	return &UpstreamResourceAccountDelete{config: c.config, hooks: c.Hooks(), mutation: mutation}
+}
+
+// DeleteOne returns a builder for deleting the given entity.
+func (c *UpstreamResourceAccountClient) DeleteOne(_m *UpstreamResourceAccount) *UpstreamResourceAccountDeleteOne {
+	return c.DeleteOneID(_m.ID)
+}
+
+// DeleteOneID returns a builder for deleting the given entity by its id.
+func (c *UpstreamResourceAccountClient) DeleteOneID(id int64) *UpstreamResourceAccountDeleteOne {
+	builder := c.Delete().Where(upstreamresourceaccount.ID(id))
+	builder.mutation.id = &id
+	builder.mutation.op = OpDeleteOne
+	return &UpstreamResourceAccountDeleteOne{builder}
+}
+
+// Query returns a query builder for UpstreamResourceAccount.
+func (c *UpstreamResourceAccountClient) Query() *UpstreamResourceAccountQuery {
+	return &UpstreamResourceAccountQuery{
+		config: c.config,
+		ctx:    &QueryContext{Type: TypeUpstreamResourceAccount},
+		inters: c.Interceptors(),
+	}
+}
+
+// Get returns a UpstreamResourceAccount entity by its id.
+func (c *UpstreamResourceAccountClient) Get(ctx context.Context, id int64) (*UpstreamResourceAccount, error) {
+	return c.Query().Where(upstreamresourceaccount.ID(id)).Only(ctx)
+}
+
+// GetX is like Get, but panics if an error occurs.
+func (c *UpstreamResourceAccountClient) GetX(ctx context.Context, id int64) *UpstreamResourceAccount {
+	obj, err := c.Get(ctx, id)
+	if err != nil {
+		panic(err)
+	}
+	return obj
+}
+
+// Hooks returns the client hooks.
+func (c *UpstreamResourceAccountClient) Hooks() []Hook {
+	return c.hooks.UpstreamResourceAccount
+}
+
+// Interceptors returns the client interceptors.
+func (c *UpstreamResourceAccountClient) Interceptors() []Interceptor {
+	return c.inters.UpstreamResourceAccount
+}
+
+func (c *UpstreamResourceAccountClient) mutate(ctx context.Context, m *UpstreamResourceAccountMutation) (Value, error) {
+	switch m.Op() {
+	case OpCreate:
+		return (&UpstreamResourceAccountCreate{config: c.config, hooks: c.Hooks(), mutation: m}).Save(ctx)
+	case OpUpdate:
+		return (&UpstreamResourceAccountUpdate{config: c.config, hooks: c.Hooks(), mutation: m}).Save(ctx)
+	case OpUpdateOne:
+		return (&UpstreamResourceAccountUpdateOne{config: c.config, hooks: c.Hooks(), mutation: m}).Save(ctx)
+	case OpDelete, OpDeleteOne:
+		return (&UpstreamResourceAccountDelete{config: c.config, hooks: c.Hooks(), mutation: m}).Exec(ctx)
+	default:
+		return nil, fmt.Errorf("ent: unknown UpstreamResourceAccount mutation op: %q", m.Op())
+	}
+}
+
 // UsageCleanupTaskClient is a client for the UsageCleanupTask schema.
 type UsageCleanupTaskClient struct {
 	config
@@ -6848,9 +7277,9 @@ type (
 		Group, IdempotencyRecord, IdentityAdoptionDecision, PaymentAuditLog,
 		PaymentOrder, PaymentProviderInstance, PendingAuthSession, PromoCode,
 		PromoCodeUsage, Proxy, RedeemCode, SecuritySecret, Setting, SubscriptionPlan,
-		TLSFingerprintProfile, UsageCleanupTask, UsageLog, User, UserAllowedGroup,
-		UserAttributeDefinition, UserAttributeValue, UserPlatformQuota,
-		UserSubscription []ent.Hook
+		TLSFingerprintProfile, Upstream, UpstreamResource, UpstreamResourceAccount,
+		UsageCleanupTask, UsageLog, User, UserAllowedGroup, UserAttributeDefinition,
+		UserAttributeValue, UserPlatformQuota, UserSubscription []ent.Hook
 	}
 	inters struct {
 		APIKey, Account, AccountGroup, Announcement, AnnouncementRead, AuthIdentity,
@@ -6860,9 +7289,9 @@ type (
 		Group, IdempotencyRecord, IdentityAdoptionDecision, PaymentAuditLog,
 		PaymentOrder, PaymentProviderInstance, PendingAuthSession, PromoCode,
 		PromoCodeUsage, Proxy, RedeemCode, SecuritySecret, Setting, SubscriptionPlan,
-		TLSFingerprintProfile, UsageCleanupTask, UsageLog, User, UserAllowedGroup,
-		UserAttributeDefinition, UserAttributeValue, UserPlatformQuota,
-		UserSubscription []ent.Interceptor
+		TLSFingerprintProfile, Upstream, UpstreamResource, UpstreamResourceAccount,
+		UsageCleanupTask, UsageLog, User, UserAllowedGroup, UserAttributeDefinition,
+		UserAttributeValue, UserPlatformQuota, UserSubscription []ent.Interceptor
 	}
 )
 

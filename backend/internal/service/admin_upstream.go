@@ -10,6 +10,7 @@ import (
 	"log/slog"
 	"net/http"
 	"regexp"
+	"sort"
 	"strings"
 	"time"
 
@@ -534,6 +535,28 @@ func (s *adminUpstreamService) SyncToAccount(ctx context.Context, resourceID int
 	if err := s.admin.ValidateAccountGroupBindings(ctx, groupIDs); err != nil {
 		return nil, err
 	}
+	groupsByPlatform := make(map[string][]int64)
+	seen := make(map[int64]struct{}, len(groupIDs))
+	for _, groupID := range groupIDs {
+		if _, exists := seen[groupID]; exists {
+			continue
+		}
+		seen[groupID] = struct{}{}
+		group, err := s.admin.GetGroup(ctx, groupID)
+		if err != nil {
+			return nil, err
+		}
+		if group == nil || !group.IsActive() {
+			return nil, fmt.Errorf("local group %d is not active", groupID)
+		}
+		if !isUpstreamSyncPlatform(group.Platform) {
+			return nil, fmt.Errorf("local group %d has unsupported platform %q", groupID, group.Platform)
+		}
+		if group.RequireOAuthOnly {
+			return nil, fmt.Errorf("local group %d only accepts OAuth accounts", groupID)
+		}
+		groupsByPlatform[group.Platform] = append(groupsByPlatform[group.Platform], groupID)
+	}
 	resource, err := s.repo.GetResource(ctx, resourceID)
 	if err != nil {
 		return nil, err
@@ -543,67 +566,108 @@ func (s *adminUpstreamService) SyncToAccount(ctx context.Context, resourceID int
 		return nil, err
 	}
 	result := &UpstreamSyncResult{Items: []UpstreamSyncItem{}}
-	if resource.SyncedAccountID != nil {
-		account, getErr := s.admin.GetAccount(ctx, *resource.SyncedAccountID)
-		if getErr != nil {
+	linked := make(map[string]UpstreamSyncedAccount, len(resource.SyncedAccounts))
+	for _, account := range resource.SyncedAccounts {
+		linked[account.Platform] = account
+	}
+	platforms := make([]string, 0, len(groupsByPlatform))
+	for platform := range groupsByPlatform {
+		platforms = append(platforms, platform)
+	}
+	sort.Strings(platforms)
+	var secret, rateText string
+	var rate float64
+	for _, platform := range platforms {
+		if _, exists := linked[platform]; !exists {
+			secret, err = s.encryptor.Decrypt(resource.KeyEncrypted)
+			if err != nil {
+				return nil, err
+			}
+			rate, rateText, err = s.resolveRate(ctx, u, resource.GroupName)
+			if err != nil {
+				return nil, err
+			}
+			break
+		}
+	}
+	for _, platform := range platforms {
+		if existing, ok := linked[platform]; ok {
+			account, getErr := s.admin.GetAccount(ctx, existing.AccountID)
+			if getErr != nil || account == nil || account.Platform != platform {
+				message := "linked account has a different platform"
+				if getErr != nil {
+					message = getErr.Error()
+				}
+				result.Failed++
+				result.Items = append(result.Items, UpstreamSyncItem{ResourceID: resourceID, Platform: platform, Status: "failed", AccountID: existing.AccountID, Message: message})
+				continue
+			}
+			// Account groups and other local settings remain under account management.
+			desired := modelWhitelistMapping(resource.ModelsSnapshot)
+			if len(desired) == 0 || modelMappingsEqual(accountModelMapping(account), desired) {
+				result.Skipped++
+				result.Items = append(result.Items, UpstreamSyncItem{ResourceID: resourceID, Platform: platform, Status: "skipped", AccountID: account.ID, Message: "model whitelist unchanged"})
+				continue
+			}
+			updatedCredentials := cloneStringAnyMap(account.Credentials)
+			updatedCredentials["model_mapping"] = desired
+			if _, err := s.admin.UpdateAccount(ctx, account.ID, &UpdateAccountInput{Credentials: updatedCredentials}); err != nil {
+				result.Failed++
+				result.Items = append(result.Items, UpstreamSyncItem{ResourceID: resourceID, Platform: platform, Status: "failed", AccountID: account.ID, Message: err.Error()})
+				continue
+			}
+			if err := s.repo.MarkResourceSynced(ctx, resourceID, platform, account.ID, existing.RateMultiplier, time.Now().UTC()); err != nil {
+				result.Failed++
+				result.Items = append(result.Items, UpstreamSyncItem{ResourceID: resourceID, Platform: platform, Status: "failed", AccountID: account.ID, Message: err.Error()})
+				continue
+			}
+			result.Updated++
+			result.Items = append(result.Items, UpstreamSyncItem{ResourceID: resourceID, Platform: platform, Status: "updated", AccountID: account.ID})
+			continue
+		}
+		credentials := map[string]any{"api_key": secret, "base_url": u.BaseURL, "pool_mode": true}
+		if modelMapping := modelWhitelistMapping(resource.ModelsSnapshot); len(modelMapping) > 0 {
+			credentials["model_mapping"] = modelMapping
+		}
+		extra := map[string]any{"upstream_sync": map[string]any{"upstream_id": u.ID, "resource_id": resource.ID, "remote_id": resource.RemoteID, "group_name": resource.GroupName, "platform": platform}}
+		account, createErr := s.admin.CreateAccount(ctx, &CreateAccountInput{Name: upstreamSyncAccountName(u.Name, platform, rateText), Platform: platform, Type: AccountTypeAPIKey, Credentials: credentials, Extra: extra, Concurrency: 5, Priority: 1, RateMultiplier: &rate, GroupIDs: groupsByPlatform[platform], SkipDefaultGroupBind: true})
+		if createErr != nil {
 			result.Failed++
-			result.Items = append(result.Items, UpstreamSyncItem{ResourceID: resourceID, Status: "failed", Message: getErr.Error()})
-			return result, nil
+			result.Items = append(result.Items, UpstreamSyncItem{ResourceID: resourceID, Platform: platform, Status: "failed", Message: createErr.Error()})
+			continue
 		}
-		// Once linked, subsequent syncs are intentionally limited to the model
-		// whitelist. Scheduling, groups, rate and other account settings remain
-		// under local account management instead of being overwritten here.
-		desired := modelWhitelistMapping(resource.ModelsSnapshot)
-		current := accountModelMapping(account)
-		if len(desired) == 0 || modelMappingsEqual(current, desired) {
-			result.Skipped++
-			result.Items = append(result.Items, UpstreamSyncItem{ResourceID: resourceID, Status: "skipped", AccountID: account.ID, Message: "model whitelist unchanged"})
-			return result, nil
-		}
-		updatedCredentials := cloneStringAnyMap(account.Credentials)
-		updatedCredentials["model_mapping"] = desired
-		updated, updateErr := s.admin.UpdateAccount(ctx, account.ID, &UpdateAccountInput{Credentials: updatedCredentials})
-		if updateErr != nil {
+		if err := s.repo.MarkResourceSynced(ctx, resourceID, platform, account.ID, rate, time.Now().UTC()); err != nil {
 			result.Failed++
-			result.Items = append(result.Items, UpstreamSyncItem{ResourceID: resourceID, Status: "failed", AccountID: account.ID, Message: updateErr.Error()})
-			return result, nil
+			result.Items = append(result.Items, UpstreamSyncItem{ResourceID: resourceID, Platform: platform, Status: "failed", AccountID: account.ID, Message: err.Error()})
+			continue
 		}
-		_ = updated
-		syncedRate := 1.0
-		if resource.SyncedRateMultiplier != nil {
-			syncedRate = *resource.SyncedRateMultiplier
-		}
-		_ = s.repo.MarkResourceSynced(ctx, resourceID, account.ID, syncedRate, time.Now().UTC())
-		result.Updated++
-		result.Items = append(result.Items, UpstreamSyncItem{ResourceID: resourceID, Status: "updated", AccountID: account.ID})
-		return result, nil
+		result.Created++
+		result.Items = append(result.Items, UpstreamSyncItem{ResourceID: resourceID, Platform: platform, Status: "created", AccountID: account.ID})
 	}
-	secret, err := s.encryptor.Decrypt(resource.KeyEncrypted)
-	if err != nil {
-		return nil, err
-	}
-	rate, rateText, err := s.resolveRate(ctx, u, resource.GroupName)
-	if err != nil {
-		return nil, err
-	}
-	name := u.Name + "-" + rateText
-	extra := map[string]any{"upstream_sync": map[string]any{"upstream_id": u.ID, "resource_id": resource.ID, "remote_id": resource.RemoteID, "group_name": resource.GroupName}}
-	credentials := map[string]any{"api_key": secret, "base_url": u.BaseURL, "pool_mode": true}
-	if modelMapping := modelWhitelistMapping(resource.ModelsSnapshot); len(modelMapping) > 0 {
-		credentials["model_mapping"] = modelMapping
-	}
-	account, createErr := s.admin.CreateAccount(ctx, &CreateAccountInput{Name: name, Platform: domain.PlatformOpenAI, Type: AccountTypeAPIKey, Credentials: credentials, Extra: extra, Concurrency: 5, Priority: 1, RateMultiplier: &rate, GroupIDs: groupIDs, SkipDefaultGroupBind: true})
-	if createErr != nil {
-		result.Failed++
-		result.Items = append(result.Items, UpstreamSyncItem{ResourceID: resourceID, Status: "failed", Message: createErr.Error()})
-		return result, nil
-	}
-	if err := s.repo.MarkResourceSynced(ctx, resourceID, account.ID, rate, time.Now().UTC()); err != nil {
-		return nil, err
-	}
-	result.Created++
-	result.Items = append(result.Items, UpstreamSyncItem{ResourceID: resourceID, Status: "created", AccountID: account.ID})
 	return result, nil
+}
+
+func isUpstreamSyncPlatform(platform string) bool {
+	switch platform {
+	case domain.PlatformAnthropic, domain.PlatformOpenAI, domain.PlatformGemini, domain.PlatformAntigravity,
+		domain.PlatformGrok, domain.PlatformKimi, domain.PlatformZhipu, domain.PlatformDeepseek,
+		domain.PlatformMiniMax, domain.PlatformOpenCodeGo:
+		return true
+	default:
+		return false
+	}
+}
+
+func upstreamSyncAccountName(upstreamName, platform, rateText string) string {
+	suffix := []rune("-" + platform + "-" + rateText)
+	if len(suffix) > 99 {
+		suffix = suffix[:99]
+	}
+	prefix := []rune(upstreamName)
+	if maxPrefix := 100 - len(suffix); len(prefix) > maxPrefix {
+		prefix = prefix[:maxPrefix]
+	}
+	return string(prefix) + string(suffix)
 }
 
 func (s *adminUpstreamService) buildUpstream(ctx context.Context, name string, sortCode int, kind, baseURL, token, refreshToken, identifier, remoteUserID, password, notes string, enabled *bool, createdBy int64) (*Upstream, error) {

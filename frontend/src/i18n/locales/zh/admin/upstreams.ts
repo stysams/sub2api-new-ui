@@ -63,6 +63,7 @@ export default {
     keyCreated: '密钥已创建',
     modelsUpdated: '模型列表已更新',
     syncDone: '同步完成',
+    syncPartial: '成功 {succeeded} 个，失败 {failed} 个。{reason}',
     missingForm: '请填写名称和站点地址',
     missingLogin: '请填写登录账号和密码，或填写已有访问令牌',
     missingRemoteUserId: '使用 new-api 访问令牌时需要填写用户编号',

@@ -32,21 +32,29 @@ type Upstream struct {
 }
 
 type UpstreamResource struct {
-	ID                   int64      `json:"id"`
-	UpstreamID           int64      `json:"upstream_id"`
-	ResourceType         string     `json:"resource_type"`
-	RemoteID             string     `json:"remote_id"`
-	Name                 string     `json:"name"`
-	GroupName            string     `json:"group_name,omitempty"`
-	KeyEncrypted         string     `json:"-"`
-	ModelsSnapshot       []string   `json:"models_snapshot"`
-	ModelsFetchedAt      *time.Time `json:"models_fetched_at,omitempty"`
-	SyncedAccountID      *int64     `json:"synced_account_id,omitempty"`
-	SyncedRateMultiplier *float64   `json:"synced_rate_multiplier,omitempty"`
-	SyncedAt             *time.Time `json:"synced_at,omitempty"`
-	Enabled              bool       `json:"enabled"`
-	CreatedAt            time.Time  `json:"created_at"`
-	UpdatedAt            time.Time  `json:"updated_at"`
+	ID                   int64                   `json:"id"`
+	UpstreamID           int64                   `json:"upstream_id"`
+	ResourceType         string                  `json:"resource_type"`
+	RemoteID             string                  `json:"remote_id"`
+	Name                 string                  `json:"name"`
+	GroupName            string                  `json:"group_name,omitempty"`
+	KeyEncrypted         string                  `json:"-"`
+	ModelsSnapshot       []string                `json:"models_snapshot"`
+	ModelsFetchedAt      *time.Time              `json:"models_fetched_at,omitempty"`
+	SyncedAccountID      *int64                  `json:"synced_account_id,omitempty"`
+	SyncedRateMultiplier *float64                `json:"synced_rate_multiplier,omitempty"`
+	SyncedAt             *time.Time              `json:"synced_at,omitempty"`
+	SyncedAccounts       []UpstreamSyncedAccount `json:"synced_accounts"`
+	Enabled              bool                    `json:"enabled"`
+	CreatedAt            time.Time               `json:"created_at"`
+	UpdatedAt            time.Time               `json:"updated_at"`
+}
+
+type UpstreamSyncedAccount struct {
+	Platform       string    `json:"platform"`
+	AccountID      int64     `json:"account_id"`
+	RateMultiplier float64   `json:"rate_multiplier"`
+	SyncedAt       time.Time `json:"synced_at"`
 }
 
 type UpstreamRepository interface {
@@ -64,7 +72,7 @@ type UpstreamRepository interface {
 	SaveBalance(context.Context, int64, domain.UpstreamBalanceSnapshot, time.Time, error) error
 	SaveModels(context.Context, int64, []string, time.Time) error
 	UpdateResourceKey(context.Context, int64, string) error
-	MarkResourceSynced(context.Context, int64, int64, float64, time.Time) error
+	MarkResourceSynced(context.Context, int64, string, int64, float64, time.Time) error
 }
 
 type UpstreamService interface {
@@ -154,6 +162,7 @@ type UpdateUpstreamInput struct {
 
 type UpstreamSyncItem struct {
 	ResourceID int64  `json:"resource_id"`
+	Platform   string `json:"platform"`
 	Status     string `json:"status"`
 	AccountID  int64  `json:"account_id,omitempty"`
 	Message    string `json:"message,omitempty"`
