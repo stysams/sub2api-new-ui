@@ -213,7 +213,7 @@ func (h *UpstreamHandler) ChatCompletion(c *gin.Context) {
 		response.ErrorFrom(c, err)
 		return
 	}
-	defer resp.Body.Close()
+	defer func() { _ = resp.Body.Close() }()
 	c.Header("Content-Type", "text/event-stream")
 	c.Header("Cache-Control", "no-cache")
 	c.Header("X-Accel-Buffering", "no")

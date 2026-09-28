@@ -424,7 +424,7 @@ func (c *upstreamClient) requestJSON(ctx context.Context, method string, access 
 	if err != nil {
 		return err
 	}
-	defer resp.Body.Close()
+	defer func() { _ = resp.Body.Close() }()
 	data, err := io.ReadAll(io.LimitReader(resp.Body, upstreamResponseLimit))
 	if err != nil {
 		return fmt.Errorf("read upstream response: %w", err)
@@ -462,7 +462,7 @@ func (c *upstreamClient) rawRequest(ctx context.Context, method string, access *
 	}
 	if resp.StatusCode < 200 || resp.StatusCode >= 300 {
 		data, _ := io.ReadAll(io.LimitReader(resp.Body, upstreamResponseLimit))
-		resp.Body.Close()
+		_ = resp.Body.Close()
 		return nil, &upstreamHTTPError{StatusCode: resp.StatusCode, Body: strings.TrimSpace(string(data))}
 	}
 	return resp, nil

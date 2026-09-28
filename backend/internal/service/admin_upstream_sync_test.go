@@ -117,7 +117,7 @@ func TestUpstreamSyncCreatesOneAccountPerSelectedPlatform(t *testing.T) {
 		case PlatformAnthropic:
 			require.Equal(t, []int64{2}, input.GroupIDs)
 		default:
-			t.Fatal(fmt.Sprintf("unexpected platform %q", input.Platform))
+			t.Fatalf("unexpected platform %q", input.Platform)
 		}
 	}
 	require.Equal(t, "relay-anthropic-1.25", admin.created[0].Name)

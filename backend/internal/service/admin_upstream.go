@@ -1035,7 +1035,7 @@ func loginSub2API(ctx context.Context, baseURL, email, password string, cfg *con
 // extractUpstreamLoginErrorMessage 从上游 JSON 响应体中提取可读的错误消息。
 // 兼容 New API / Sub2API 等多种响应格式（message / data.message / error 字段）。
 func extractUpstreamLoginErrorMessage(body []byte) string {
-	var obj map[string]interface{}
+	var obj map[string]any
 	if err := json.Unmarshal(body, &obj); err != nil {
 		return ""
 	}
@@ -1043,7 +1043,7 @@ func extractUpstreamLoginErrorMessage(body []byte) string {
 	if msg, ok := obj["message"].(string); ok && strings.TrimSpace(msg) != "" {
 		return strings.TrimSpace(msg)
 	}
-	if data, ok := obj["data"].(map[string]interface{}); ok {
+	if data, ok := obj["data"].(map[string]any); ok {
 		if msg, ok := data["message"].(string); ok && strings.TrimSpace(msg) != "" {
 			return strings.TrimSpace(msg)
 		}
