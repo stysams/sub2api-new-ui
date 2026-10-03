@@ -20,14 +20,12 @@ English | [中文](README_CN.md) | [日本語](README_JA.md)
 
 ## 最新更新
 
-### 2026-09-30
+### 2026-10-03
 
-- 支持 GPT-6.1 Sol 的模型识别、Codex 模型目录和价格计算。
-- 管理员查询 Claude OAuth 账号的可用重置次数后，可以确认使用一次原生额度重置；服务端校验可用性并防止重复领取。
-- 单个用户默认最多保留 200 个 API 密钥，每小时最多创建 60 次；管理员可以调整或关闭限制。
-- Codex 客户端配置支持远程模型目录，也可以选择下载本地目录；目录过大时自动改用本地文件。
-- 余额模式会为在途请求预留预计费用，降低并发请求同时透支余额的风险。
-- Claude Code 专用分组配置降级分组后，其他客户端的 Chat Completions 和 Responses 请求可以走降级分组。
+- 可以使用 TypeSafe API 密钥账号，通过原生 `/v1/systemone` 接口调用 `jev-latest` 模型。
+- 管理员可以设置按充值金额生效的赠金或折扣档位，充值页面与订单信息会显示对应优惠。
+- 管理员可以在账号列表中直接调整优先级；用户可以按分组名称排序 API 密钥。
+- 请求完成前删除 API 密钥时，已产生的用量仍可正常结算。
 
 [查看完整发布记录](docs/releases/release-notes.md)
 
@@ -837,6 +835,31 @@ xAI quota is passive. Sub2API does not invent subscription quota values; it reco
 New Grok image and video generation requests use a media-specific eligibility check. API-key accounts remain eligible. OAuth accounts with explicit Free or forbidden billing evidence are excluded from new media generation. Missing or malformed observations are probed before dispatch; a successful but incomplete billing response is treated as `billing_inconclusive` and remains eligible for backwards compatibility, because an unknown billing schema is not proof that the account lacks media entitlement. Operators can quarantine a known-bad account with `extra.grok_media_eligible=false` or force-enable a verified account with `true`. Imports run the billing-first quota probe proactively. Chat requests and video status lookups are not affected by this media-only quarantine. If no eligible account remains, the media endpoint returns HTTP `503` with error type `grok_media_no_eligible_account`.
 
 Administrators can override automatic media eligibility through the account create/update API by setting `extra.grok_media_eligible` to `false` (exclude) or `true` (force eligible). On update, set it to `null` to remove the override and return to automatic probe-based behavior; omitting the field preserves the current override. A weekly allowance period alone is not treated as a paid tier signal. Successful image responses must contain at least one actual image output; empty HTTP `200` responses trigger account failover instead of being counted and returned as successful generations.
+
+---
+
+## TypeSafe / Jev Support
+
+Sub2API supports TypeSafe API-key accounts through Jev's native, non-streaming System One protocol.
+
+- Platform: `typesafe`; account type: API Key
+- Default upstream: `https://api.typesafe.ai`
+- Public endpoint: `POST /v1/systemone`
+- Model: `jev-latest`, also returned by `/v1/models` for TypeSafe groups
+- Questions: `noul`, `choice`, and `score`
+
+Requests and successful responses retain the native System One JSON structure. This endpoint is not compatible with Chat Completions, Responses, Anthropic Messages, or streaming clients.
+
+Question validation follows the TypeSafe OpenAPI wire schema (also used by SDK v0.5.7). `instructions` may be omitted or `null` for all question types. Noul `criteria` may be omitted or `null`; its `true`/`false` descriptions and Choice descriptions accept strings, objects, arrays, or `null`. Score `criteria` must be a non-empty array of string, object, or array descriptions; a single level is valid. SDK integer-keyed Score maps are normalized to arrays by the SDK before sending.
+
+```bash
+curl https://your-sub2api.example.com/v1/systemone \
+  -H 'Authorization: Bearer sk-your-sub2api-key' \
+  -H 'Content-Type: application/json' \
+  --data '{"model":"jev-latest","state":"Text to evaluate","questions":{"safety":{"type":"noul","instructions":"Evaluate whether the text is unsafe"}}}'
+```
+
+The built-in `jev-latest` price is `$0.042` per million input tokens and `$0` for output tokens. Channel pricing can override both values. Credential, billing, permission, rate-limit, overload, server, and network failures (`401`, `402`, `403`, `429`, `529`, `5xx`, transport errors) use the existing account error policy (including custom error codes and temporary-unschedulable rules) and fail over to another account; request errors (`400`, `413`, and `422`) are returned without retrying another account and never change account state. TypeSafe groups (and Composite requests routed to TypeSafe) reject Messages, Chat Completions, Responses, and count_tokens requests with `404`.
 
 ---
 
