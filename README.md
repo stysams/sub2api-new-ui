@@ -20,12 +20,11 @@ English | [中文](README_CN.md) | [日本語](README_JA.md)
 
 ## 最新更新
 
-### 2026-10-03
+### 2026-10-07
 
-- 可以使用 TypeSafe API 密钥账号，通过原生 `/v1/systemone` 接口调用 `jev-latest` 模型。
-- 管理员可以设置按充值金额生效的赠金或折扣档位，充值页面与订单信息会显示对应优惠。
-- 管理员可以在账号列表中直接调整优先级；用户可以按分组名称排序 API 密钥。
-- 请求完成前删除 API 密钥时，已产生的用量仍可正常结算。
+- 首次安装时可自动生成随机管理员登录凭据，并从启动日志中查看。
+- EasyPay 支付回调增加通知参数校验，防止伪造付款成功通知。
+- 使用远程模型目录生成 Codex 客户端配置时，可通过 API 密钥发现可用模型。
 
 [查看完整发布记录](docs/releases/release-notes.md)
 
@@ -365,8 +364,10 @@ JWT_SECRET=your_jwt_secret_here
 TOTP_ENCRYPTION_KEY=your_totp_key_here
 
 # Optional: Admin account
-ADMIN_EMAIL=admin@example.com
-ADMIN_PASSWORD=your_admin_password
+# Leave empty to auto-generate a random email (login username) and password, shown in logs on first startup.
+# Avoid guessable values such as admin@example.com: they are brute-force targets.
+ADMIN_EMAIL=
+ADMIN_PASSWORD=
 
 # Optional: Custom port
 SERVER_PORT=8080
@@ -415,9 +416,9 @@ docker compose -f docker-compose.local.yml logs -f sub2api
 
 Open `http://YOUR_SERVER_IP:8080` in your browser.
 
-If admin password was auto-generated, find it in logs:
+If the admin email (login username) or password was auto-generated, find them in logs:
 ```bash
-docker compose -f docker-compose.local.yml logs sub2api | grep "admin password"
+docker compose -f docker-compose.local.yml logs sub2api | grep "Generated admin"
 ```
 
 #### Upgrade
