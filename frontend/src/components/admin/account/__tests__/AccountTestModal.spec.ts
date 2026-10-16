@@ -7,13 +7,15 @@ const { getAvailableModels, copyToClipboard } = vi.hoisted(() => ({
   copyToClipboard: vi.fn()
 }))
 
-vi.mock('@/api/admin', () => ({
-  adminAPI: {
-    accounts: {
-      getAvailableModels
+vi.mock('@/api/client', async () => {
+  const actual = await vi.importActual<typeof import('@/api/client')>('@/api/client')
+  return {
+    ...actual,
+    apiClient: {
+      get: async (url: string) => ({ data: await getAvailableModels(url) })
     }
   }
-}))
+})
 
 vi.mock('@/composables/useClipboard', () => ({
   useClipboard: () => ({
@@ -123,6 +125,7 @@ describe('AccountTestModal', () => {
     const wrapper = mountModal()
     await wrapper.setProps({ show: true })
     await flushPromises()
+    expect(getAvailableModels).toHaveBeenCalledWith('/admin/accounts/42/models')
 
     const promptInput = wrapper.find('textarea.textarea-stub')
     expect(promptInput.exists()).toBe(true)
@@ -170,6 +173,7 @@ describe('AccountTestModal', () => {
     })
     await wrapper.setProps({ show: true })
     await flushPromises()
+    expect(getAvailableModels).toHaveBeenCalledWith('/admin/accounts/13/models')
 
     const buttons = wrapper.findAll('button')
     const startButton = buttons.find((button) => button.text().includes('admin.accounts.startTest'))
