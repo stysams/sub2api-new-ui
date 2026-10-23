@@ -229,6 +229,35 @@ describe('admin AccountsView lite account list', () => {
     wrapper.unmount()
   })
 
+  it('preserves restored filters when activating a custom group tab', async () => {
+    localStorage.setItem('account-filter-values', JSON.stringify({ platform: 'openai', status: 'error' }))
+    const wrapper = mountView()
+    await flushPromises()
+    expect(listAccounts).toHaveBeenLastCalledWith(
+      1, 20, expect.objectContaining({ platform: 'openai', status: 'error', group: '' }), expect.anything()
+    )
+
+    await wrapper.findAll('[role="tab"]')[1].trigger('click')
+    await flushPromises()
+    expect(listAccounts).toHaveBeenLastCalledWith(
+      1, 20, expect.objectContaining({ platform: 'openai', status: 'error', group: '7' }), expect.anything()
+    )
+    expect(JSON.parse(localStorage.getItem('account-filter-values') ?? '{}')).toEqual({ platform: 'openai', status: 'error' })
+    wrapper.unmount()
+  })
+
+  it.each(['invalid JSON', '[]', '{"platform":"unknown","status":"unknown"}'])(
+    'ignores invalid saved account filters: %s', async saved => {
+      localStorage.setItem('account-filter-values', saved)
+      const wrapper = mountView()
+      await flushPromises()
+      expect(listAccounts).toHaveBeenLastCalledWith(
+        1, 20, expect.objectContaining({ platform: '', status: '' }), expect.anything()
+      )
+      wrapper.unmount()
+    }
+  )
+
   it('restores the local group order while keeping boundary tabs fixed', async () => {
     localStorage.setItem('account-group-tab-order', JSON.stringify([9, 7]))
     getAllGroups.mockResolvedValue([

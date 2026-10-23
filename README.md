@@ -20,12 +20,12 @@ English | [中文](README_CN.md) | [日本語](README_JA.md)
 
 ## 最新更新
 
-### 2026-10-16
+### 2026-10-23
 
-- 支持 Gemini 4 Argon，Gemini 兼容接口可以传递思考设置并返回流式推理摘要。
-- OpenAI API 密钥账号支持在 Messages 接口中模拟联网搜索，Anthropic 转发遵守账号配置的服务地址。
-- 完善支付通知确认、订单类型校验及退款处理中金额预留，Stripe 支付恢复使用订单保存的支付信息。
-- 账号筛选项恢复直接显示，保留自定义分组标签页；修正 Codex 账号导入隔离和 GLM CodingPlan 用量窗口。
+- Vertex 账号支持配额上限与用量进度展示，账号列表记住平台和状态筛选条件。
+- Gemini 系列接口遵守分组生图开关，流式请求中途断开时保留已收集用量并计费。
+- 改善 OpenAI 过载与空流重试、工具参数兼容及 DeepSeek 图片转发，修正 Grok 4.7 Fast 计费。
+- 优化账号调度与配额更新，更新前端内容净化依赖。
 
 [查看完整发布记录](docs/releases/release-notes.md)
 
@@ -160,6 +160,16 @@ Please read the following carefully before using this project:
 <tr>
 <td width="180"><a href="https://modelflare.dev/sign-up?utm_source=github&utm_campaign=sub2api"><img src="assets/partners/logos/modelflare.png" alt="Modelflare" width="150"></a></td>
 <td>Modelflare: Full strength, stable, nothing watered down. Global SOTA models at a lower cost. Operated by US-based Havenbyte LLC, Modelflare supports GPT, Claude, Gemini, Grok, and other leading models through common compatible protocols, plus 40+ image and video models. Cache compensation is a highlight: selected OpenAI groups (price-first, stable, and premium) guarantee daily cache hit rates of 65%, 75%, or 85%, and if eligible requests fall short, Modelflare refunds the difference, visible on the usage dashboard after settlement. Special offers: a single top-up of US$20 unlocks the GPT discount group at a 0.015x price multiplier, and a single top-up of US$50 unlocks the Claude discount group at a 0.03x multiplier. Register via <a href="https://modelflare.dev/sign-up?utm_source=github&utm_campaign=sub2api">this exclusive link</a> to get started.</td>
+</tr>
+
+<tr>
+<td width="180"><a href="https://x.com/chenju_ai"><img src="assets/partners/logos/chenju_ai.png" alt="Chenju" width="150"></a></td>
+<td>Thanks to <a href="https://x.com/chenju_ai">Chenju</a> for sponsoring this project! This is probably the only ad slot in this section that doesn't ask you to sign up for anything. Good open-source projects deserve to be paid for, so Chenju is chipping in a gift and raising a glass to the author. Find <a href="https://x.com/chenju_ai">Chenju</a> on X to chat about API relays, upstream providers, or just shoot the breeze.</td>
+</tr>
+
+<tr>
+<td width="180"><a href="https://t.me/AACC8888888"><img src="assets/partners/logos/ooko.ai.png" alt="ooko.ai" width="150"></a></td>
+<td>🔑 Buying AI accounts at top prices | Gemini · Claude · GPT | Main and alt accounts all welcome, any channel wanted | Pay-per-usage supported | Seeking first-hand resources from major providers, I'll bring the KEY.<br>WeChat: Liuyou-zawd | Telegram: <a href="https://t.me/AACC8888888">AACC8888888</a></td>
 </tr>
 
 </table>
