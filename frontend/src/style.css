@@ -535,6 +535,43 @@
     @apply flex-1 overflow-y-auto;
   }
 
+  .modal-body.prompt-record-detail-body {
+    scrollbar-width: thin;
+    scrollbar-color: rgba(156, 163, 175, 0.65) transparent;
+  }
+
+  .modal-body.prompt-record-detail-body::-webkit-scrollbar {
+    width: 10px;
+  }
+
+  .modal-body.prompt-record-detail-body::-webkit-scrollbar-track {
+    background: transparent;
+    border-radius: 9999px;
+  }
+
+  .modal-body.prompt-record-detail-body::-webkit-scrollbar-thumb {
+    background-color: rgba(156, 163, 175, 0.65);
+    border: 2px solid transparent;
+    border-radius: 9999px;
+    background-clip: padding-box;
+  }
+
+  .modal-body.prompt-record-detail-body::-webkit-scrollbar-thumb:hover {
+    background-color: rgba(107, 114, 128, 0.85);
+  }
+
+  .dark .modal-body.prompt-record-detail-body {
+    scrollbar-color: rgba(107, 114, 128, 0.75) transparent;
+  }
+
+  .dark .modal-body.prompt-record-detail-body::-webkit-scrollbar-thumb {
+    background-color: rgba(107, 114, 128, 0.75);
+  }
+
+  .dark .modal-body.prompt-record-detail-body::-webkit-scrollbar-thumb:hover {
+    background-color: rgba(156, 163, 175, 0.9);
+  }
+
   .modal-footer {
     @apply border-t border-gray-200 px-4 py-3 dark:border-dark-700;
     @apply sm:px-6 sm:py-4;

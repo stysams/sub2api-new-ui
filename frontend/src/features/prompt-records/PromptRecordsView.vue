@@ -523,7 +523,8 @@
   <BaseDialog
     :show="showDetail"
     :title="t('admin.promptRecords.detailTitle', { id: selectedID ?? '-' })"
-    width="wide"
+    width="full"
+    body-class="prompt-record-detail-body"
     :fullscreen="detailFullscreen"
     close-on-click-outside
     @close="closeDetail"

@@ -32,7 +32,7 @@
           </div>
 
           <!-- Body -->
-          <div ref="modalBodyRef" class="modal-body">
+          <div ref="modalBodyRef" :class="['modal-body', bodyClass]">
             <slot></slot>
           </div>
 
@@ -73,6 +73,7 @@ interface Props {
   closeOnClickOutside?: boolean
   showCloseButton?: boolean
   fullscreen?: boolean
+  bodyClass?: string
   zIndex?: number
 }
 
@@ -87,6 +88,7 @@ const props = withDefaults(defineProps<Props>(), {
   closeOnClickOutside: false,
   showCloseButton: true,
   fullscreen: false,
+  bodyClass: '',
   zIndex: 50
 })
 
