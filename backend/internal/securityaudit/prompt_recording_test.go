@@ -58,9 +58,7 @@ func TestPromptRecordingConfigDefaultsEnabledAndPersistsChanges(t *testing.T) {
 	require.True(t, headers)
 	require.True(t, prompt)
 	require.True(t, response)
-	agentPreset, skills := manager.PromptRecordingPresetFilters()
-	require.True(t, agentPreset)
-	require.True(t, skills)
+	require.Equal(t, RecommendedPromptRecordingPolicy(), *manager.PromptRecordingSnapshot().RecordingPolicy)
 
 	require.NoError(t, manager.SavePromptRecordingEnabled(context.Background(), false))
 	require.False(t, manager.PromptRecordingEnabled())
@@ -86,15 +84,13 @@ func TestPromptRecordingContentPersistsIndependentSwitches(t *testing.T) {
 	require.False(t, headers)
 	require.True(t, prompt)
 	require.True(t, response)
-	require.NoError(t, manager.SavePromptRecordingSettings(ctx, PromptRecordingSettingsUpdate{PromptEnabled: &disabled, ResponseEnabled: &disabled, FilterAgentPreset: &disabled, FilterSkills: &disabled}))
+	require.NoError(t, manager.SavePromptRecordingSettings(ctx, PromptRecordingSettingsUpdate{PromptEnabled: &disabled, ResponseEnabled: &disabled}))
 	require.NoError(t, manager.Reload(ctx))
 	headers, prompt, response = manager.PromptRecordingContent()
 	require.False(t, headers)
 	require.False(t, prompt)
 	require.False(t, response)
-	agentPreset, skills := manager.PromptRecordingPresetFilters()
-	require.False(t, agentPreset)
-	require.False(t, skills)
+	require.Equal(t, RecommendedPromptRecordingPolicy(), *manager.PromptRecordingSnapshot().RecordingPolicy)
 	repository.writeError = errors.New("database unavailable")
 	enabled := true
 	require.Error(t, manager.SavePromptRecordingSettings(ctx, PromptRecordingSettingsUpdate{HeadersEnabled: &enabled, PromptEnabled: &enabled, ResponseEnabled: &enabled}))
@@ -120,7 +116,7 @@ func (r *capturedRequestRepository) UpdatePromptRecordResponse(_ context.Context
 	return true, nil
 }
 
-func TestPromptRecordingContentCombinationsRetainFullRequest(t *testing.T) {
+func TestPromptRecordingContentCombinationsRetainCanonicalContent(t *testing.T) {
 	body := `{"messages":[{"role":"user","content":"` + strings.Repeat("完整内容", 20000) + `"}],"tools":[{"type":"function","function":{"name":"lookup"}}],"temperature":0.7}`
 	for _, headersEnabled := range []bool{false, true} {
 		for _, promptEnabled := range []bool{false, true} {
@@ -147,7 +143,13 @@ func TestPromptRecordingContentCombinationsRetainFullRequest(t *testing.T) {
 					require.Empty(t, record.RequestHeaders)
 				}
 				if promptEnabled {
-					require.JSONEq(t, body, record.RequestBody)
+					var document PromptContentDocument
+					require.NoError(t, json.Unmarshal([]byte(record.RequestBody), &document))
+					require.Equal(t, 2, document.SchemaVersion)
+					require.Equal(t, strings.Repeat("完整内容", 20000), PromptContentText(document))
+					require.NotContains(t, record.RequestBody, "lookup")
+					require.NotContains(t, record.RequestBody, "temperature")
+					require.NotEmpty(t, record.RecordingPolicy)
 					require.Empty(t, record.PromptText, "new records retain one canonical request document")
 					require.Positive(t, record.PromptLength)
 				} else {
@@ -162,26 +164,33 @@ func TestPromptRecordingContentCombinationsRetainFullRequest(t *testing.T) {
 	}
 }
 
-func TestPreparePromptRecordKeepsOnlyLatestThirtyMessages(t *testing.T) {
-	messages := make([]any, 35)
-	for index := range messages {
-		messages[index] = map[string]any{"role": "user", "content": "message-" + strconv.Itoa(index)}
+func TestPreparePromptRecordKeepsOnlyLatestThirtyDialogueMessages(t *testing.T) {
+	messages := make([]any, 0, 35*3)
+	for index := range 35 {
+		messages = append(messages,
+			map[string]any{"role": "user", "content": "message-" + strconv.Itoa(index)},
+			map[string]any{"role": "assistant", "tool_calls": []any{map[string]any{
+				"id": "call-" + strconv.Itoa(index), "type": "function",
+				"function": map[string]any{"name": "read", "arguments": "{}"},
+			}}},
+			map[string]any{"role": "tool", "tool_call_id": "call-" + strconv.Itoa(index), "content": "result-" + strconv.Itoa(index)},
+		)
 	}
 	body, err := json.Marshal(map[string]any{"messages": messages})
 	require.NoError(t, err)
 
 	prepared, err := preparePromptRecord(Request{Protocol: "openai_chat", Body: body})
 	require.NoError(t, err)
-	var stored map[string]any
+	var stored PromptContentDocument
 	require.NoError(t, json.Unmarshal(prepared.StoredBody, &stored))
-	items, ok := stored["messages"].([]any)
-	require.True(t, ok)
-	require.Len(t, items, promptRecordDefaultMaxMessages)
-	for index, item := range items {
-		message, ok := item.(map[string]any)
-		require.True(t, ok)
-		require.Equal(t, "message-"+strconv.Itoa(index+5), message["content"])
+	require.Len(t, stored.Blocks, promptRecordDefaultMaxMessages*3)
+	for index := range promptRecordDefaultMaxMessages {
+		require.Equal(t, "message-"+strconv.Itoa(index+5), stored.Blocks[index*3].Text)
+		require.Equal(t, "tool_call", stored.Blocks[index*3+1].Category)
+		require.Equal(t, "tool_result", stored.Blocks[index*3+2].Category)
+		require.Equal(t, "call-"+strconv.Itoa(index+5), stored.Blocks[index*3+2].CallID)
 	}
+	require.True(t, stored.Truncated)
 	require.Equal(t, promptRecordDefaultMaxMessages, prepared.StoredSnapshot.MessageCount)
 	// The full request identity remains based on the original request.
 	original := promptRecordMetadataDocument(Request{Protocol: "openai_chat"}, mustDecodePromptDocument(t, body), body, false)
@@ -213,12 +222,15 @@ func TestPromptRecordingRetainsRequestsWithoutTextAndMatchesResponse(t *testing.
 func TestPreparePromptRecordReturnsStoredBodyTextAndOriginalHash(t *testing.T) {
 	body := []byte(`{"model":"test","seed":9007199254740993,"messages":[{"role":"system","content":"You are Codex"},{"role":"user","content":[{"type":"text","text":"keep"},{"type":"image_url","image_url":{"url":"data:image/png;base64,IMAGE"}}]}]}`)
 	req := Request{RequestID: "prepared", Protocol: "openai_chat", Body: body}
+	policy := RecommendedPromptRecordingPolicy()
+	policy.Keep["metadata"] = true
+	req.recordingConfig = &PromptRecordingConfig{RecordingPolicy: &policy}
 	original := promptRecordSnapshot(req)
 
 	prepared, err := preparePromptRecord(req)
 	require.NoError(t, err)
 	require.Equal(t, original.PromptHash, prepared.OriginalPromptHash)
-	require.Contains(t, string(prepared.StoredBody), `"seed":9007199254740993`)
+	require.Contains(t, string(prepared.StoredBody), `"data":9007199254740993`)
 	require.NotContains(t, string(prepared.StoredBody), "IMAGE")
 	require.NotContains(t, string(prepared.StoredBody), "image_url")
 	require.Contains(t, prepared.StoredSnapshot.FullPrompt, "keep")

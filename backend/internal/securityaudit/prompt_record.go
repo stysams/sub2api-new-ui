@@ -47,6 +47,9 @@ type PromptRecord struct {
 	PromptHash         string     `json:"prompt_hash"`
 	PromptText         string     `json:"prompt_text"`
 	RequestBody        string     `json:"request_body"`
+	ContentDocument    string     `json:"content_document,omitempty"`
+	RecordingPolicy    string     `json:"recording_policy,omitempty"`
+	ResponseDocument   string     `json:"response_document,omitempty"`
 	RequestHeaders     string     `json:"request_headers"`
 	PromptLength       int        `json:"prompt_length"`
 	MessageCount       int        `json:"message_count"`
@@ -147,6 +150,7 @@ type PromptRecordRepository interface {
 
 type PromptResponse struct {
 	Text       string
+	Document   string
 	Length     int
 	Truncated  bool
 	CapturedAt time.Time
@@ -165,13 +169,13 @@ func (r *PostgreSQLRepository) InsertPromptRecord(ctx context.Context, record *P
 			session_id, turn_no, stage, user_id, username_snapshot, user_email_snapshot,
 			api_key_id, api_key_name_snapshot, group_id, group_name, provider, endpoint,
 			protocol, model, prompt_hash, prompt_text, prompt_length, message_count,
-			risk_status, created_at, expires_at, request_body, request_headers
-		) VALUES ($1,$2,$3,NULLIF($4,0),$5,$6,NULLIF($7,0),$8,$9,$10,$11,$12,$13,$14,$15,$16,$17,$18,$19,$20,$21,$22,$23)
+			risk_status, created_at, expires_at, request_body, request_headers, recording_policy
+		) VALUES ($1,$2,$3,NULLIF($4,0),$5,$6,NULLIF($7,0),$8,$9,$10,$11,$12,$13,$14,$15,$16,$17,$18,$19,$20,$21,$22,$23,$24)
 		RETURNING id`,
 		record.SessionID, record.TurnNo, record.Stage, record.UserID, record.Username, record.UserEmail,
 		record.APIKeyID, record.APIKeyName, record.GroupID, record.GroupName, record.Provider, record.Endpoint,
 		record.Protocol, record.Model, record.PromptHash, record.PromptText, record.PromptLength, record.MessageCount,
-		ifEmpty(record.RiskStatus, "pending"), record.CreatedAt, record.ExpiresAt, record.RequestBody, record.RequestHeaders).Scan(&id)
+		ifEmpty(record.RiskStatus, "pending"), record.CreatedAt, record.ExpiresAt, record.RequestBody, record.RequestHeaders, record.RecordingPolicy).Scan(&id)
 	return id, err
 }
 
@@ -180,8 +184,8 @@ func (r *PostgreSQLRepository) UpdatePromptRecordResponse(ctx context.Context, k
 		return false, errors.New("prompt record database unavailable")
 	}
 	result, err := r.db.ExecContext(ctx, `UPDATE prompt_records
-		SET response_text=$1, response_length=$2, response_truncated=$3, response_captured_at=$4
-		WHERE id=$5`, captured.Text, captured.Length, captured.Truncated, captured.CapturedAt, key.ID)
+		SET response_text=$1, response_length=$2, response_truncated=$3, response_captured_at=$4, response_document=$6
+		WHERE id=$5`, captured.Text, captured.Length, captured.Truncated, captured.CapturedAt, key.ID, captured.Document)
 	if err != nil {
 		return false, err
 	}
@@ -298,7 +302,7 @@ func (r *PostgreSQLRepository) GetPromptRecord(ctx context.Context, id int64) (*
 		user_email_snapshot, COALESCE(api_key_id,0), api_key_name_snapshot, group_id, group_name, provider, endpoint,
 		protocol, model, prompt_hash, prompt_text, prompt_length, message_count, risk_status, risk_result::text,
 		response_text, response_length, response_truncated, response_captured_at,
-		risk_checked_at, created_at, expires_at, request_body, request_headers FROM prompt_records WHERE id=$1`, id).Scan(&item.ID, &item.SessionID, &item.TurnNo, &item.Stage, &item.UserID, &item.Username, &item.UserEmail, &item.APIKeyID, &item.APIKeyName, &groupID, &item.GroupName, &item.Provider, &item.Endpoint, &item.Protocol, &item.Model, &item.PromptHash, &item.PromptText, &item.PromptLength, &item.MessageCount, &item.RiskStatus, &item.RiskResult, &item.ResponseText, &item.ResponseLength, &item.ResponseTruncated, &responseCapturedAt, &riskCheckedAt, &item.CreatedAt, &expiresAt, &item.RequestBody, &item.RequestHeaders)
+		risk_checked_at, created_at, expires_at, request_body, request_headers, recording_policy, response_document FROM prompt_records WHERE id=$1`, id).Scan(&item.ID, &item.SessionID, &item.TurnNo, &item.Stage, &item.UserID, &item.Username, &item.UserEmail, &item.APIKeyID, &item.APIKeyName, &groupID, &item.GroupName, &item.Provider, &item.Endpoint, &item.Protocol, &item.Model, &item.PromptHash, &item.PromptText, &item.PromptLength, &item.MessageCount, &item.RiskStatus, &item.RiskResult, &item.ResponseText, &item.ResponseLength, &item.ResponseTruncated, &responseCapturedAt, &riskCheckedAt, &item.CreatedAt, &expiresAt, &item.RequestBody, &item.RequestHeaders, &item.RecordingPolicy, &item.ResponseDocument)
 	if errors.Is(err, sql.ErrNoRows) {
 		return nil, ErrPromptRecordNotFound
 	}
@@ -485,7 +489,7 @@ func (s *PromptRecordService) RecordResponse(_ context.Context, req Request, cap
 	requestReference := req
 	requestReference.Body = nil
 	requestReference.Headers = nil
-	size := int64(len(captured.Text)) + promptRecordMetadataBytes(req)
+	size := int64(len(captured.Text)+len(captured.Document)) + promptRecordMetadataBytes(req)
 	if !s.reserve(size, true, req) {
 		return
 	}
@@ -493,6 +497,7 @@ func (s *PromptRecordService) RecordResponse(_ context.Context, req Request, cap
 	// A truncated string may still retain a much larger backing allocation.
 	// Own exactly the text covered by the reservation.
 	captured.Text = strings.Clone(captured.Text)
+	captured.Document = strings.Clone(captured.Document)
 	job := promptRecordJob{request: requestReference, response: &captured, bytes: size}
 	s.pendingMu.Lock()
 	if _, exists := s.pendingResponses[req.recordingCorrelation]; exists {
@@ -555,6 +560,8 @@ func (s *PromptRecordService) persist(req Request) {
 	}
 	record := &PromptRecord{SessionID: sessionID, Stage: ifEmpty(snapshot.Stage, req.Stage), UserID: snapshot.UserID, Username: snapshot.UsernameSnapshot, UserEmail: snapshot.UserEmailSnapshot, APIKeyID: snapshot.APIKeyID, APIKeyName: snapshot.APIKeyNameSnapshot, GroupID: snapshot.GroupID, GroupName: snapshot.GroupName, Provider: snapshot.Provider, Endpoint: snapshot.Endpoint, Protocol: snapshot.Protocol, Model: snapshot.Model, PromptHash: prepared.OriginalPromptHash, PromptText: snapshot.FullPrompt, PromptLength: snapshot.PromptLength, MessageCount: snapshot.MessageCount, RiskStatus: "pending", CreatedAt: time.Now()}
 	record.TurnNo = req.TurnNo
+	encodedPolicy, _ := json.Marshal(promptRecordingRequestPolicy(req))
+	record.RecordingPolicy = string(encodedPolicy)
 	if req.recordingRetentionDays > 0 {
 		expiresAt := record.CreatedAt.AddDate(0, 0, req.recordingRetentionDays)
 		record.ExpiresAt = &expiresAt
@@ -655,9 +662,22 @@ func (s *PromptRecordService) ListPromptRecords(ctx context.Context, filter Prom
 }
 func (s *PromptRecordService) GetPromptRecord(ctx context.Context, id int64) (*PromptRecord, error) {
 	item, err := s.repo.GetPromptRecord(ctx, id)
+	if err == nil && item != nil && item.RecordingPolicy != "" && item.RequestBody != "" {
+		var document PromptContentDocument
+		if json.Unmarshal([]byte(item.RequestBody), &document) == nil && document.SchemaVersion == 2 {
+			item.ContentDocument = item.RequestBody
+			item.PromptText = BuildFullPrompt(PromptContentText(document), DefaultFullPromptMaxRunes)
+			return item, nil
+		}
+	}
 	if err == nil && item != nil && item.PromptText == "" && item.RequestBody != "" {
 		if document, decodeErr := decodePromptDocument([]byte(item.RequestBody)); decodeErr == nil {
-			item.PromptText = promptRecordSnapshotDocument(Request{Protocol: item.Protocol}, document, nil).FullPrompt
+			segments := extractPromptRecordSegments(item.Protocol, document)
+			texts := make([]string, 0, len(segments))
+			for _, segment := range segments {
+				texts = append(texts, segment.text)
+			}
+			item.PromptText = BuildFullPrompt(strings.Join(texts, "\n\n"), DefaultFullPromptMaxRunes)
 		}
 	}
 	return item, err

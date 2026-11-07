@@ -138,25 +138,16 @@ func (s *fakePromptAdminService) SavePromptRecordingSettings(_ context.Context, 
 	if update.ResponseEnabled != nil {
 		s.recording.ResponseEnabled = *update.ResponseEnabled
 	}
-	if update.FilterPreset != nil {
-		s.recording.FilterPreset = *update.FilterPreset
-	}
-	if update.FilterAgentPreset != nil {
-		s.recording.FilterAgentPreset = *update.FilterAgentPreset
-	}
-	if update.FilterSkills != nil {
-		s.recording.FilterSkills = *update.FilterSkills
+	if update.RecordingPolicy != nil {
+		s.recording.RecordingPolicy = ClonePromptRecordingPolicy(update.RecordingPolicy)
 	}
 	return s.recording, nil
 }
 
 func TestPromptRecordingContentEndpoints(t *testing.T) {
-	service := &fakePromptAdminService{recording: PromptRecordingConfig{
-		Enabled: true, HeadersEnabled: true, PromptEnabled: true, ResponseEnabled: true,
-		FilterAgentPreset: true, FilterSkills: true,
-	}}
+	service := &fakePromptAdminService{recording: defaultPromptRecordingConfig()}
 	router := promptAdminRouter(service)
-	for _, key := range []string{"headers_enabled", "prompt_enabled", "response_enabled", "filter_agent_preset", "filter_skills"} {
+	for _, key := range []string{"headers_enabled", "prompt_enabled", "response_enabled"} {
 		result := promptAdminRequest(t, router, http.MethodPut, "/admin/prompt-records/recording", map[string]any{key: false})
 		require.Equal(t, http.StatusOK, result.Code)
 		require.Contains(t, result.Body.String(), `"`+key+`":false`)
@@ -164,14 +155,12 @@ func TestPromptRecordingContentEndpoints(t *testing.T) {
 	}
 	combined := promptAdminRequest(t, router, http.MethodPut, "/admin/prompt-records/recording", map[string]any{
 		"enabled": false, "headers_enabled": true, "prompt_enabled": true, "response_enabled": true,
-		"filter_preset": true, "filter_agent_preset": true, "filter_skills": true,
 	})
 	require.Equal(t, http.StatusOK, combined.Code)
-	require.Equal(t, PromptRecordingConfig{
-		Enabled: false, HeadersEnabled: true, PromptEnabled: true, ResponseEnabled: true,
-		FilterPreset: true, FilterAgentPreset: true, FilterSkills: true,
-	}, service.recording)
-	for _, payload := range []map[string]any{{"headers_enabled": "false"}, {"prompt_enabled": nil}, {"response_enabled": "false"}, {"filter_skills": nil}} {
+	expected := defaultPromptRecordingConfig()
+	expected.Enabled = false
+	require.Equal(t, expected, service.recording)
+	for _, payload := range []map[string]any{{"headers_enabled": "false"}, {"prompt_enabled": nil}, {"response_enabled": "false"}} {
 		result := promptAdminRequest(t, router, http.MethodPut, "/admin/prompt-records/recording", payload)
 		require.Equal(t, http.StatusBadRequest, result.Code)
 	}
@@ -207,6 +196,7 @@ func promptAdminRouter(service PromptAdminService) *gin.Engine {
 	records.GET("", handler.ListPromptRecords)
 	records.GET("/recording", handler.GetPromptRecordingConfig)
 	records.PUT("/recording", handler.UpdatePromptRecordingConfig)
+	records.POST("/preview", handler.PreviewPromptRecording)
 	records.DELETE("/all", handler.DeleteAllPromptRecords)
 	records.GET("/:id", handler.GetPromptRecord)
 	records.DELETE("/:id", handler.DeletePromptRecord)

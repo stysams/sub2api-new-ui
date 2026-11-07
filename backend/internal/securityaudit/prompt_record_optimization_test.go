@@ -2,7 +2,6 @@ package securityaudit
 
 import (
 	"context"
-	"encoding/json"
 	"errors"
 	"strings"
 	"sync"
@@ -179,9 +178,8 @@ func TestRecordAgentPresetPathAndBoundaries(t *testing.T) {
 		{"wrong heading", "You are Codex", "# AGENTS.md instructions for \n<INSTRUCTIONS>private preset</INSTRUCTIONS>", false},
 	} {
 		t.Run(tc.name, func(t *testing.T) {
-			body, err := json.Marshal(map[string]any{"instructions": tc.identity, "input": []any{map[string]any{"role": "user", "content": tc.text}}})
-			require.NoError(t, err)
-			filtered := string(filterPresetRequestBody("responses", body, allPromptRecordFilters))
+			document := map[string]any{"instructions": tc.identity, "input": []any{map[string]any{"role": "user", "content": tc.text}}}
+			filtered := PromptContentText(AnalyzePromptContent("responses", document, RecommendedPromptRecordingPolicy(), 30))
 			require.Equal(t, !tc.removed, strings.Contains(filtered, "private preset"), filtered)
 			if tc.removed {
 				require.Contains(t, filtered, "keep")
@@ -192,27 +190,36 @@ func TestRecordAgentPresetPathAndBoundaries(t *testing.T) {
 
 func TestRecordResponseCaptureRecoversTextAndMarksIncomplete(t *testing.T) {
 	body := []byte(`{"choices":[{"message":{"content":"` + strings.Repeat("a", 3*1024*1024) + `"}}]}`)
-	result := ExtractResponseText(body[:2*1024*1024], true)
-	require.True(t, result.Recognized)
+	result, recognized := ExtractRecordedResponse(Request{}, body[:2*1024*1024], true)
+	require.True(t, recognized)
 	require.True(t, result.Truncated)
-	require.Len(t, result.Text, PromptResponseTextLimit)
+	require.NotEmpty(t, result.Text)
+	require.LessOrEqual(t, len(result.Text), PromptResponseTextLimit)
+	require.LessOrEqual(t, len(result.Document), PromptResponseTextLimit)
+	require.Equal(t, utf8.RuneCountInString(result.Text), result.Length)
 	for _, suffix := range []string{`hello\`, `hello\u12`, "hello你"[:7]} {
-		result := ExtractResponseText([]byte(`{"output_text":"`+suffix), true)
+		result, recognized := ExtractRecordedResponse(Request{}, []byte(`{"output_text":"`+suffix), true)
+		require.True(t, recognized)
 		require.True(t, result.Truncated)
 		require.True(t, utf8.ValidString(result.Text))
 		require.True(t, strings.HasPrefix(result.Text, "hello"))
 	}
 	sse := "data: {\"choices\":[{\"delta\":{\"content\":\"first\"}}]}\n\ndata: " + string(body) + "\n\ndata: [DONE]\n"
-	result = ExtractResponseText([]byte(sse), false)
-	require.True(t, result.Recognized)
+	result, recognized = ExtractRecordedResponse(Request{}, []byte(sse), false)
+	require.True(t, recognized)
 	// A large valid event is read without the old one-MiB scanner failure.
 	require.Equal(t, "first", result.Text)
 	longDelta := "data: {\"choices\":[{\"delta\":{\"content\":\"" + strings.Repeat("b", 1100*1024) + "\"}}]}\n\ndata: [DONE]\n"
-	result = ExtractResponseText([]byte(longDelta), false)
+	result, recognized = ExtractRecordedResponse(Request{}, []byte(longDelta), false)
+	require.True(t, recognized)
 	require.True(t, result.Truncated)
-	require.Len(t, result.Text, PromptResponseTextLimit)
-	require.Equal(t, 1100*1024, result.Length)
-	broken := ExtractResponseText([]byte("data: {\"output_text\":\"first\"}\n\ndata: {broken\n"), false)
+	require.NotEmpty(t, result.Text)
+	require.LessOrEqual(t, len(result.Text), PromptResponseTextLimit)
+	require.LessOrEqual(t, len(result.Document), PromptResponseTextLimit)
+	require.Equal(t, utf8.RuneCountInString(result.Text), result.Length)
+	require.Less(t, result.Length, 1100*1024)
+	broken, recognized := ExtractRecordedResponse(Request{}, []byte("data: {\"type\":\"response.output_text.delta\",\"delta\":\"first\"}\n\ndata: {broken\n"), false)
+	require.True(t, recognized)
 	require.True(t, broken.Truncated)
 	require.Equal(t, "first", broken.Text)
 }

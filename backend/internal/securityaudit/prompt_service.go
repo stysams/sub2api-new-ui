@@ -54,27 +54,38 @@ func NewPromptService(
 }
 
 func (s *PromptService) RecordPrompt(ctx context.Context, req Request) {
-	if s == nil || s.records == nil || !s.PromptRecordingEnabled() {
+	if s == nil || s.records == nil {
 		req.recordingCorrelation.complete(PromptRecordKey{}, false)
 		return
 	}
 	config := s.GetPromptRecordingConfig()
+	if req.recordingConfig != nil {
+		config = *req.recordingConfig
+	} else {
+		config.RecordingPolicy = ClonePromptRecordingPolicy(config.RecordingPolicy)
+		req.recordingConfig = &config
+	}
+	if !config.Enabled {
+		req.recordingCorrelation.complete(PromptRecordKey{}, false)
+		return
+	}
 	// Session ID is a record identity field, not optional request-header content.
 	// Capture it before the headers switch is applied so disabling header storage
 	// cannot make the session filter and detail metadata lose their value.
 	req.recordingSessionID = promptRecordSessionID(req.Headers)
 	req.recordingSkipHeaders = !config.HeadersEnabled
 	req.recordingSkipPrompt = !config.PromptEnabled
-	req.recordingFilterPreset = config.FilterPreset
-	req.recordingFilterAgent = config.FilterAgentPreset
-	req.recordingFilterSkills = config.FilterSkills
 	req.recordingRetentionDays = config.RetentionDays
 	req.recordingMaxMessages = config.MaxMessages
 	s.records.RecordPrompt(ctx, req)
 }
 
 func (s *PromptService) RecordResponse(ctx context.Context, req Request, response PromptResponse) {
-	if s != nil && s.records != nil && s.PromptResponseRecordingEnabled() {
+	enabled := s != nil && s.PromptResponseRecordingEnabled()
+	if req.recordingConfig != nil {
+		enabled = req.recordingConfig.Enabled && req.recordingConfig.ResponseEnabled
+	}
+	if s != nil && s.records != nil && enabled {
 		s.records.RecordResponse(ctx, req, response)
 	}
 }
@@ -85,47 +96,44 @@ type promptRecordingConfigStore interface {
 }
 
 type PromptRecordingConfig struct {
-	RetentionDays     int  `json:"retention_days"`
-	MaxMessages       int  `json:"max_messages"`
-	Enabled           bool `json:"enabled"`
-	HeadersEnabled    bool `json:"headers_enabled"`
-	PromptEnabled     bool `json:"prompt_enabled"`
-	ResponseEnabled   bool `json:"response_enabled"`
-	FilterPreset      bool `json:"filter_preset"`
-	FilterAgentPreset bool `json:"filter_agent_preset"`
-	FilterSkills      bool `json:"filter_skills"`
+	RetentionDays   int                    `json:"retention_days"`
+	MaxMessages     int                    `json:"max_messages"`
+	Enabled         bool                   `json:"enabled"`
+	HeadersEnabled  bool                   `json:"headers_enabled"`
+	PromptEnabled   bool                   `json:"prompt_enabled"`
+	ResponseEnabled bool                   `json:"response_enabled"`
+	RecordingPolicy *PromptRecordingPolicy `json:"recording_policy"`
 }
 
 type PromptRecordingSettingsUpdate struct {
-	RetentionDays     *int  `json:"retention_days"`
-	MaxMessages       *int  `json:"max_messages"`
-	Enabled           *bool `json:"enabled"`
-	HeadersEnabled    *bool `json:"headers_enabled"`
-	PromptEnabled     *bool `json:"prompt_enabled"`
-	ResponseEnabled   *bool `json:"response_enabled"`
-	FilterPreset      *bool `json:"filter_preset"`
-	FilterAgentPreset *bool `json:"filter_agent_preset"`
-	FilterSkills      *bool `json:"filter_skills"`
+	RetentionDays   *int                   `json:"retention_days"`
+	MaxMessages     *int                   `json:"max_messages"`
+	Enabled         *bool                  `json:"enabled"`
+	HeadersEnabled  *bool                  `json:"headers_enabled"`
+	PromptEnabled   *bool                  `json:"prompt_enabled"`
+	ResponseEnabled *bool                  `json:"response_enabled"`
+	RecordingPolicy *PromptRecordingPolicy `json:"recording_policy,omitempty"`
 }
 
 func (u PromptRecordingSettingsUpdate) Empty() bool {
 	return u.Enabled == nil && u.HeadersEnabled == nil && u.PromptEnabled == nil && u.ResponseEnabled == nil &&
-		u.FilterPreset == nil && u.FilterAgentPreset == nil && u.FilterSkills == nil && u.RetentionDays == nil && u.MaxMessages == nil
+		u.RetentionDays == nil && u.MaxMessages == nil && u.RecordingPolicy == nil
 }
 
 func (u PromptRecordingSettingsUpdate) OnlyEnabled() bool {
 	return u.Enabled != nil && u.HeadersEnabled == nil && u.PromptEnabled == nil && u.ResponseEnabled == nil &&
-		u.FilterPreset == nil && u.FilterAgentPreset == nil && u.FilterSkills == nil && u.RetentionDays == nil && u.MaxMessages == nil
+		u.RetentionDays == nil && u.MaxMessages == nil && u.RecordingPolicy == nil
 }
 
 type promptRecordingContentStore interface {
 	PromptRecordingContent() (bool, bool, bool)
-	PromptRecordingFilterPreset() bool
-	PromptRecordingPresetFilters() (bool, bool)
 	SavePromptRecordingSettings(context.Context, PromptRecordingSettingsUpdate) error
 }
 
 func (s *PromptService) SavePromptRecordingSettings(ctx context.Context, update PromptRecordingSettingsUpdate) (PromptRecordingConfig, error) {
+	if err := validatePromptRecordingSettingsUpdate(update); err != nil {
+		return PromptRecordingConfig{}, err
+	}
 	if s == nil {
 		return PromptRecordingConfig{}, errors.New("prompt recording service unavailable")
 	}
@@ -151,14 +159,21 @@ func (s *PromptService) PromptRecordingEnabled() bool {
 }
 
 func (s *PromptService) PromptResponseRecordingEnabled() bool {
-	return s != nil && s.PromptRecordingEnabled() && s.GetPromptRecordingConfig().ResponseEnabled
+	if s == nil {
+		return false
+	}
+	config := s.GetPromptRecordingConfig()
+	return config.Enabled && config.ResponseEnabled
 }
 
 func (s *PromptService) GetPromptRecordingConfig() PromptRecordingConfig {
-	config := PromptRecordingConfig{
-		Enabled: s.PromptRecordingEnabled(), HeadersEnabled: true, PromptEnabled: true, ResponseEnabled: true,
-		FilterAgentPreset: true, FilterSkills: true, MaxMessages: promptRecordDefaultMaxMessages,
+	if s != nil {
+		if store, ok := s.config.(interface{ PromptRecordingSnapshot() PromptRecordingConfig }); ok {
+			return store.PromptRecordingSnapshot()
+		}
 	}
+	config := defaultPromptRecordingConfig()
+	config.Enabled = s.PromptRecordingEnabled()
 	if s != nil {
 		if store, ok := s.config.(interface{ PromptRecordingRetentionDays() int }); ok {
 			config.RetentionDays = store.PromptRecordingRetentionDays()
@@ -168,8 +183,6 @@ func (s *PromptService) GetPromptRecordingConfig() PromptRecordingConfig {
 		}
 		if store, ok := s.config.(promptRecordingContentStore); ok {
 			config.HeadersEnabled, config.PromptEnabled, config.ResponseEnabled = store.PromptRecordingContent()
-			config.FilterPreset = store.PromptRecordingFilterPreset()
-			config.FilterAgentPreset, config.FilterSkills = store.PromptRecordingPresetFilters()
 		}
 	}
 	return config

@@ -5,7 +5,6 @@ import (
 	"crypto/sha256"
 	"net/http"
 	"strings"
-	"time"
 
 	"github.com/Wei-Shaw/sub2api/internal/securityaudit"
 	middleware2 "github.com/Wei-Shaw/sub2api/internal/server/middleware"
@@ -159,7 +158,9 @@ func (w *securityAuditResponseWriter) capture(data []byte) {
 	if w.context == nil {
 		return
 	}
-	if _, exists := w.context.Get(securityAuditRequestContextKey); !exists {
+	value, exists := w.context.Get(securityAuditRequestContextKey)
+	request, ok := value.(securityaudit.Request)
+	if !exists || !ok || !securityaudit.ShouldRecordPromptResponse(request) {
 		return
 	}
 	remaining := securityAuditResponseCaptureLimit - w.body.Len()
@@ -178,7 +179,7 @@ func (w *securityAuditResponseWriter) capture(data []byte) {
 func (h *Handlers) PromptResponseCaptureMiddleware() gin.HandlerFunc {
 	return func(c *gin.Context) {
 		coordinator := h.promptResponseCoordinator()
-		if coordinator == nil || !coordinator.PromptResponseRecordingEnabled() {
+		if coordinator == nil {
 			c.Next()
 			return
 		}
@@ -186,9 +187,6 @@ func (h *Handlers) PromptResponseCaptureMiddleware() gin.HandlerFunc {
 		c.Writer = writer
 		c.Next()
 
-		if !coordinator.PromptResponseRecordingEnabled() {
-			return
-		}
 		if c.Writer.Status() < http.StatusOK || c.Writer.Status() >= http.StatusMultipleChoices {
 			return
 		}
@@ -205,14 +203,11 @@ func recordCapturedPromptResponse(c *gin.Context, coordinator *securityaudit.Coo
 	if !exists || !ok || isSecurityAuditWebSocketStage(request.Stage) {
 		return
 	}
-	extraction := securityaudit.ExtractResponseText(writer.body.Bytes(), writer.truncated)
-	if !extraction.Recognized {
+	captured, recognized := securityaudit.ExtractRecordedResponse(request, writer.body.Bytes(), writer.truncated)
+	if !recognized {
 		return
 	}
-	coordinator.RecordResponse(c.Request.Context(), request, securityaudit.PromptResponse{
-		Text: extraction.Text, Length: extraction.Length, Truncated: extraction.Truncated,
-		CapturedAt: time.Now().UTC(),
-	})
+	coordinator.RecordResponse(c.Request.Context(), request, captured)
 }
 
 func (h *Handlers) promptResponseCoordinator() *securityaudit.Coordinator {

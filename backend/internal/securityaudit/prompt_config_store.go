@@ -41,17 +41,16 @@ type ConfigManager struct {
 	// independently of whether endpoint credentials or the full config could be
 	// activated. A config version alone cannot distinguish async from blocking.
 	expectedBlocking atomic.Bool
-	// recordingState uses 0 for the legacy/default state (enabled), 1 for
-	// explicitly enabled and 2 for explicitly disabled.
-	recordingState                atomic.Int32
-	recordingHeadersDisabled      atomic.Bool
-	recordingPromptDisabled       atomic.Bool
-	recordingResponseDisabled     atomic.Bool
-	recordingFilterPreset         atomic.Bool
-	recordingFilterAgentDisabled  atomic.Bool
-	recordingFilterSkillsDisabled atomic.Bool
-	recordingRetentionDays        atomic.Int64
-	recordingMaxMessages          atomic.Int32
+	// A request captures this immutable snapshot once, so a concurrent policy
+	// update cannot mix old content switches with a new category policy.
+	recordingSnapshot atomic.Pointer[PromptRecordingConfig]
+	recordingMu       sync.Mutex
+	// Guarded by recordingMu. Without an earlier valid category policy, scalar
+	// updates cannot reactivate recording after an invalid policy was loaded.
+	recordingPolicyLoadInvalid bool
+	// Remembers persisted intent while an invalid initial policy blocks recording.
+	// A corrected policy restores that intent unless enabled is also updated.
+	recordingRecoveryEnabled *bool
 	// configUntrusted is set when a load/reload fails before a trustworthy
 	// snapshot is installed. Combined with expectedBlocking, EffectiveMode
 	// fails closed so a persisted blocking policy cannot be silently skipped
@@ -90,7 +89,7 @@ func (m *ConfigManager) Start(ctx context.Context) error {
 	m.lifecycleMu.Unlock()
 	loadErr := m.Reload(runCtx)
 	if loadErr != nil {
-		m.markConfigUntrusted()
+		m.markUntrustedIfNoActiveSnapshot()
 	}
 	m.wg.Add(1)
 	go m.refreshLoop(runCtx)
@@ -121,35 +120,33 @@ func (m *ConfigManager) Reload(ctx context.Context) error {
 		m.markUntrustedIfNoActiveSnapshot()
 		return errors.New("prompt audit setting repository unavailable")
 	}
+	m.recordingMu.Lock()
+	defer m.recordingMu.Unlock()
 	values, err := m.settings.GetMultiple(ctx, []string{
 		SettingKeyPromptAuditConfig, SettingKeyRiskControl, SettingKeyPromptRecording,
 		SettingKeyPromptRecordingHeaders, SettingKeyPromptRecordingPrompt, SettingKeyPromptRecordingResponse,
-		SettingKeyPromptRecordingFilterPreset, SettingKeyPromptRecordingFilterAgent, SettingKeyPromptRecordingFilterSkills,
 		SettingKeyPromptRecordingRetention,
 		SettingKeyPromptRecordingMaxMessages,
+		SettingKeyPromptRecordingPolicy,
 	})
 	if err != nil {
 		m.recordLoadError(err)
 		m.markUntrustedIfNoActiveSnapshot()
 		return err
 	}
-	m.setPromptRecordingState(values[SettingKeyPromptRecording] != "false")
-	m.recordingHeadersDisabled.Store(values[SettingKeyPromptRecordingHeaders] == "false")
-	m.recordingPromptDisabled.Store(values[SettingKeyPromptRecordingPrompt] == "false")
-	m.recordingResponseDisabled.Store(values[SettingKeyPromptRecordingResponse] == "false")
-	m.recordingFilterPreset.Store(values[SettingKeyPromptRecordingFilterPreset] == "true")
-	m.recordingFilterAgentDisabled.Store(values[SettingKeyPromptRecordingFilterAgent] == "false")
-	m.recordingFilterSkillsDisabled.Store(values[SettingKeyPromptRecordingFilterSkills] == "false")
-	retention, err := strconv.Atoi(values[SettingKeyPromptRecordingRetention])
-	if err != nil || retention < 0 || retention > 3650 {
-		retention = 0
+	recording, recordingErr := parsePromptRecordingSettings(values)
+	m.recordingPolicyLoadInvalid = recordingErr != nil
+	if recordingErr == nil {
+		m.recordingSnapshot.Store(&recording)
+		m.recordingRecoveryEnabled = nil
+	} else if m.recordingSnapshot.Load() == nil {
+		// Never activate the fallback policy when a persisted policy is invalid.
+		// Audit activation below remains independent of recording.
+		enabled := recording.Enabled
+		m.recordingRecoveryEnabled = &enabled
+		recording.Enabled = false
+		m.recordingSnapshot.Store(&recording)
 	}
-	m.recordingRetentionDays.Store(int64(retention))
-	maxMsgs, err := strconv.Atoi(values[SettingKeyPromptRecordingMaxMessages])
-	if err != nil || maxMsgs < 1 || maxMsgs > 999 {
-		maxMsgs = promptRecordDefaultMaxMessages
-	}
-	m.recordingMaxMessages.Store(int32(maxMsgs))
 	m.observeExpectedState(values[SettingKeyPromptAuditConfig], values[SettingKeyRiskControl] == "true")
 	storage, err := ParseStorageConfig(values[SettingKeyPromptAuditConfig])
 	if err != nil {
@@ -170,6 +167,13 @@ func (m *ConfigManager) Reload(ctx context.Context) error {
 	previous := m.snapshot.Load()
 	m.snapshot.Store(&activeConfigSnapshot{storage: cloneStorageConfig(storage), active: cloneActiveConfig(active), loadedAt: now})
 	m.configUntrusted.Store(false)
+	if recordingErr != nil {
+		m.recordLoadError(recordingErr)
+		LogWarn(EventConfigReloadDegraded, map[string]any{
+			"status": "degraded", "error_code": "prompt_recording_policy_invalid",
+		})
+		return recordingErr
+	}
 	recovered := m.clearLoadError()
 	m.logInvalidTokenEndpoints(previous, active)
 	// refreshLoop calls Reload every 5s, so logging every successful load turns
@@ -183,48 +187,70 @@ func (m *ConfigManager) Reload(ctx context.Context) error {
 }
 
 func (m *ConfigManager) PromptRecordingEnabled() bool {
-	return m == nil || m.recordingState.Load() != 2
+	return m.PromptRecordingSnapshot().Enabled
 }
 
 func (m *ConfigManager) PromptRecordingContent() (bool, bool, bool) {
-	if m == nil {
-		return true, true, true
-	}
-	return !m.recordingHeadersDisabled.Load(), !m.recordingPromptDisabled.Load(), !m.recordingResponseDisabled.Load()
-}
-
-func (m *ConfigManager) PromptRecordingFilterPreset() bool {
-	return m != nil && m.recordingFilterPreset.Load()
-}
-
-func (m *ConfigManager) PromptRecordingPresetFilters() (bool, bool) {
-	if m == nil {
-		return true, true
-	}
-	return !m.recordingFilterAgentDisabled.Load(), !m.recordingFilterSkillsDisabled.Load()
+	config := m.PromptRecordingSnapshot()
+	return config.HeadersEnabled, config.PromptEnabled, config.ResponseEnabled
 }
 
 func (m *ConfigManager) PromptRecordingRetentionDays() int {
-	if m == nil {
-		return 0
-	}
-	return int(m.recordingRetentionDays.Load())
+	return m.PromptRecordingSnapshot().RetentionDays
 }
 
 func (m *ConfigManager) PromptRecordingMaxMessages() int {
-	if m == nil {
-		return promptRecordDefaultMaxMessages
+	return m.PromptRecordingSnapshot().MaxMessages
+}
+
+// PromptRecordingSnapshot returns a detached copy; callers may retain or edit
+// it without mutating the active policy map.
+func (m *ConfigManager) PromptRecordingSnapshot() PromptRecordingConfig {
+	if m != nil {
+		if snapshot := m.recordingSnapshot.Load(); snapshot != nil {
+			return clonePromptRecordingConfig(*snapshot)
+		}
 	}
-	v := int(m.recordingMaxMessages.Load())
-	if v < 1 || v > 999 {
-		return promptRecordDefaultMaxMessages
+	return defaultPromptRecordingConfig()
+}
+
+func parsePromptRecordingSettings(values map[string]string) (PromptRecordingConfig, error) {
+	config := defaultPromptRecordingConfig()
+	config.Enabled = values[SettingKeyPromptRecording] != "false"
+	config.HeadersEnabled = values[SettingKeyPromptRecordingHeaders] != "false"
+	config.PromptEnabled = values[SettingKeyPromptRecordingPrompt] != "false"
+	config.ResponseEnabled = values[SettingKeyPromptRecordingResponse] != "false"
+	if retention, err := strconv.Atoi(values[SettingKeyPromptRecordingRetention]); err == nil && retention >= 0 && retention <= 3650 {
+		config.RetentionDays = retention
 	}
-	return v
+	if maxMessages, err := strconv.Atoi(values[SettingKeyPromptRecordingMaxMessages]); err == nil && maxMessages >= 1 && maxMessages <= 999 {
+		config.MaxMessages = maxMessages
+	}
+	if raw := strings.TrimSpace(values[SettingKeyPromptRecordingPolicy]); raw != "" {
+		var policy PromptRecordingPolicy
+		if err := json.Unmarshal([]byte(raw), &policy); err != nil {
+			return config, errors.New("invalid persisted prompt recording policy JSON")
+		}
+		if err := ValidatePromptRecordingPolicy(policy); err != nil {
+			return config, fmt.Errorf("invalid persisted prompt recording policy: %w", err)
+		}
+		config.RecordingPolicy = &policy
+	}
+	return config, nil
 }
 
 func (m *ConfigManager) SavePromptRecordingSettings(ctx context.Context, update PromptRecordingSettingsUpdate) error {
 	if m == nil || m.settings == nil {
 		return errors.New("prompt recording setting repository unavailable")
+	}
+	if err := validatePromptRecordingSettingsUpdate(update); err != nil {
+		return err
+	}
+	m.recordingMu.Lock()
+	defer m.recordingMu.Unlock()
+	next := m.PromptRecordingSnapshot()
+	if m.recordingPolicyLoadInvalid && m.recordingRecoveryEnabled != nil && update.RecordingPolicy == nil {
+		return errors.New("invalid persisted prompt recording policy must be replaced before updating recording settings")
 	}
 	updates := map[string]string{}
 	if update.RetentionDays != nil {
@@ -245,50 +271,48 @@ func (m *ConfigManager) SavePromptRecordingSettings(ctx context.Context, update 
 	if update.ResponseEnabled != nil {
 		updates[SettingKeyPromptRecordingResponse] = strconv.FormatBool(*update.ResponseEnabled)
 	}
-	if update.FilterPreset != nil {
-		updates[SettingKeyPromptRecordingFilterPreset] = strconv.FormatBool(*update.FilterPreset)
-	}
-	if update.FilterAgentPreset != nil {
-		updates[SettingKeyPromptRecordingFilterAgent] = strconv.FormatBool(*update.FilterAgentPreset)
-	}
-	if update.FilterSkills != nil {
-		updates[SettingKeyPromptRecordingFilterSkills] = strconv.FormatBool(*update.FilterSkills)
-	}
 	if update.MaxMessages != nil {
 		if *update.MaxMessages < 1 || *update.MaxMessages > 999 {
 			return errors.New("max_messages must be between 1 and 999")
 		}
 		updates[SettingKeyPromptRecordingMaxMessages] = strconv.Itoa(*update.MaxMessages)
 	}
+	if update.RecordingPolicy != nil {
+		next.RecordingPolicy = ClonePromptRecordingPolicy(update.RecordingPolicy)
+		if m.recordingRecoveryEnabled != nil {
+			next.Enabled = *m.recordingRecoveryEnabled
+		}
+		raw, err := json.Marshal(next.RecordingPolicy)
+		if err != nil {
+			return err
+		}
+		updates[SettingKeyPromptRecordingPolicy] = string(raw)
+	}
 	if err := m.settings.SetMultiple(ctx, updates); err != nil {
 		return err
 	}
 	if update.RetentionDays != nil {
-		m.recordingRetentionDays.Store(int64(*update.RetentionDays))
+		next.RetentionDays = *update.RetentionDays
 	}
 	if update.Enabled != nil {
-		m.setPromptRecordingState(*update.Enabled)
+		next.Enabled = *update.Enabled
 	}
 	if update.HeadersEnabled != nil {
-		m.recordingHeadersDisabled.Store(!*update.HeadersEnabled)
+		next.HeadersEnabled = *update.HeadersEnabled
 	}
 	if update.PromptEnabled != nil {
-		m.recordingPromptDisabled.Store(!*update.PromptEnabled)
+		next.PromptEnabled = *update.PromptEnabled
 	}
 	if update.ResponseEnabled != nil {
-		m.recordingResponseDisabled.Store(!*update.ResponseEnabled)
-	}
-	if update.FilterPreset != nil {
-		m.recordingFilterPreset.Store(*update.FilterPreset)
-	}
-	if update.FilterAgentPreset != nil {
-		m.recordingFilterAgentDisabled.Store(!*update.FilterAgentPreset)
-	}
-	if update.FilterSkills != nil {
-		m.recordingFilterSkillsDisabled.Store(!*update.FilterSkills)
+		next.ResponseEnabled = *update.ResponseEnabled
 	}
 	if update.MaxMessages != nil {
-		m.recordingMaxMessages.Store(int32(*update.MaxMessages))
+		next.MaxMessages = *update.MaxMessages
+	}
+	m.recordingSnapshot.Store(&next)
+	if update.RecordingPolicy != nil {
+		m.recordingPolicyLoadInvalid = false
+		m.recordingRecoveryEnabled = nil
 	}
 	if m.redis != nil {
 		version := m.expected.Load()
@@ -303,39 +327,13 @@ func (m *ConfigManager) SavePromptRecordingSettings(ctx context.Context, update 
 }
 
 func (m *ConfigManager) SavePromptRecordingEnabled(ctx context.Context, enabled bool) error {
-	if m == nil || m.settings == nil {
-		return errors.New("prompt recording setting repository unavailable")
-	}
-	if err := m.settings.Set(ctx, SettingKeyPromptRecording, strconv.FormatBool(enabled)); err != nil {
+	if err := m.SavePromptRecordingSettings(ctx, PromptRecordingSettingsUpdate{Enabled: &enabled}); err != nil {
 		return err
 	}
-	m.setPromptRecordingState(enabled)
 	LogInfo(EventConfigUpdated, map[string]any{
 		"status": "updated", "prompt_recording_enabled": enabled,
 	})
-	if m.redis != nil {
-		version := m.expected.Load()
-		if version < 1 {
-			version = 1
-		}
-		if err := m.redis.Publish(ctx, ConfigInvalidationChannel, strconv.FormatInt(version, 10)).Err(); err != nil {
-			LogWarn(EventConfigReloadDegraded, map[string]any{
-				"config_version": version, "status": "degraded", "error_code": "prompt_recording_invalidation_publish_failed",
-			})
-		}
-	}
 	return nil
-}
-
-func (m *ConfigManager) setPromptRecordingState(enabled bool) {
-	if m == nil {
-		return
-	}
-	if enabled {
-		m.recordingState.Store(1)
-		return
-	}
-	m.recordingState.Store(2)
 }
 
 // shouldLogConfigLoaded reports whether a successful reload carries news: the

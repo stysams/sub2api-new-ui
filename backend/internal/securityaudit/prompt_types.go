@@ -7,17 +7,14 @@ import (
 )
 
 const (
-	SettingKeyPromptAuditConfig           = "prompt_audit_config"
-	SettingKeyRiskControl                 = "risk_control_enabled"
-	SettingKeyPromptRecording             = "prompt_recording_enabled"
-	SettingKeyPromptRecordingHeaders      = "prompt_recording_headers_enabled"
-	SettingKeyPromptRecordingPrompt       = "prompt_recording_prompt_enabled"
-	SettingKeyPromptRecordingResponse     = "prompt_recording_response_enabled"
-	SettingKeyPromptRecordingFilterPreset = "prompt_recording_filter_preset_enabled"
-	SettingKeyPromptRecordingFilterAgent  = "prompt_recording_filter_agent_preset_enabled"
-	SettingKeyPromptRecordingFilterSkills = "prompt_recording_filter_skills_enabled"
-	SettingKeyPromptRecordingRetention    = "prompt_recording_retention_days"
-	SettingKeyPromptRecordingMaxMessages  = "prompt_recording_max_messages"
+	SettingKeyPromptAuditConfig          = "prompt_audit_config"
+	SettingKeyRiskControl                = "risk_control_enabled"
+	SettingKeyPromptRecording            = "prompt_recording_enabled"
+	SettingKeyPromptRecordingHeaders     = "prompt_recording_headers_enabled"
+	SettingKeyPromptRecordingPrompt      = "prompt_recording_prompt_enabled"
+	SettingKeyPromptRecordingResponse    = "prompt_recording_response_enabled"
+	SettingKeyPromptRecordingRetention   = "prompt_recording_retention_days"
+	SettingKeyPromptRecordingMaxMessages = "prompt_recording_max_messages"
 
 	ConfigInvalidationChannel = "sub2api:prompt_guard:config:invalidate"
 	PayloadKeyPrefix          = "sub2api:prompt_audit:payload:"
@@ -95,13 +92,11 @@ type Request struct {
 	recordingSessionID     string
 	recordingSkipHeaders   bool
 	recordingSkipPrompt    bool
-	recordingFilterPreset  bool
-	recordingFilterAgent   bool
-	recordingFilterSkills  bool
 	recordingCorrelation   *promptRecordCorrelation
 	recordingIdentity      string
 	recordingRetentionDays int
 	recordingMaxMessages   int
+	recordingConfig        *PromptRecordingConfig
 	Stage                  string
 	TurnNo                 int
 }

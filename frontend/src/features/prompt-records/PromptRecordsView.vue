@@ -87,7 +87,10 @@
           >
             <label for="prompt-record-max-messages" class="input-label col-span-2 text-xs">
               {{ t('admin.promptRecords.maxMessages') }}
-              <span class="ml-1 font-normal text-gray-500 dark:text-gray-400">
+              <span
+                class="ml-1 font-normal text-gray-500 dark:text-gray-400"
+                :title="t('admin.promptRecords.maxMessagesHelp')"
+              >
                 {{ t('admin.promptRecords.maxMessagesCompactHelp') }}
               </span>
             </label>
@@ -100,6 +103,7 @@
               step="1"
               required
               class="input h-8 w-full min-w-0"
+              aria-describedby="prompt-record-max-messages-help"
               :disabled="recordingLoading || recordingSaving"
             />
             <button
@@ -109,6 +113,9 @@
             >
               {{ t('common.save') }}
             </button>
+            <p id="prompt-record-max-messages-help" class="sr-only">
+              {{ t('admin.promptRecords.maxMessagesHelp') }}
+            </p>
           </form>
         </div>
       </div>
@@ -145,49 +152,95 @@
             </button>
           </div>
         </div>
-        <div
-          v-if="recordingContent.filter_preset"
-          class="flex flex-wrap items-center gap-x-6 gap-y-2 border-l-2 border-primary-100 pl-4 dark:border-primary-900/50"
-          data-test="prompt-recording-preset-options"
-        >
-          <div
-            v-for="option in presetFilterOptions"
-            :key="option.key"
-            class="flex min-h-11 items-center gap-3 text-sm text-gray-800 dark:text-gray-200"
-          >
-            <span>{{ t(option.label) }}</span>
-            <button
-              type="button"
-              role="switch"
-              class="relative inline-flex h-11 w-12 shrink-0 items-center justify-center rounded-lg focus:outline-none focus-visible:ring-2 focus-visible:ring-primary-500 focus-visible:ring-offset-2 disabled:cursor-not-allowed disabled:opacity-60 dark:focus-visible:ring-offset-dark-900"
-              :aria-label="t(option.label)"
-              :aria-checked="recordingContent[option.key]"
-              :aria-busy="recordingLoading || recordingSaving"
-              :disabled="recordingLoading || recordingSaving || recordingEnabled !== true || !recordingContent.filter_preset"
-              :data-test="`prompt-recording-${option.key}`"
-              @click="toggleRecordingContent(option.key)"
-            >
-              <span
-                aria-hidden="true"
-                class="relative inline-flex h-6 w-11 items-center rounded-full border-2 border-transparent transition-colors motion-reduce:transition-none"
-                :class="recordingContent[option.key] ? 'bg-primary-600' : 'bg-gray-300 dark:bg-dark-600'"
-              >
-                <span
-                  class="pointer-events-none inline-block h-5 w-5 rounded-full bg-white shadow transition-transform motion-reduce:transition-none"
-                  :class="recordingContent[option.key] ? 'translate-x-5' : 'translate-x-0'"
-                />
-              </span>
-            </button>
-          </div>
-          <p class="w-full text-xs text-gray-500 dark:text-gray-400">
-            {{ t('admin.promptRecords.presetFilterHelp') }}
-          </p>
-        </div>
         <p class="text-xs text-gray-500 dark:text-gray-400">
           {{ t('admin.promptRecords.recordingContentHelp') }}
         </p>
         <p class="text-xs text-gray-500 dark:text-gray-400">{{ t('admin.promptRecords.responseScope') }}</p>
       </div>
+
+      <details class="group card p-4 sm:p-6" data-test="prompt-recording-policy">
+        <summary class="flex cursor-pointer list-none items-start justify-between gap-3 rounded-lg focus-visible:outline-primary-500 [&::-webkit-details-marker]:hidden" data-test="prompt-policy-toggle">
+          <div class="min-w-0">
+            <h2 class="text-sm font-semibold text-gray-900 dark:text-white">{{ t('admin.promptRecords.policyTitle') }}</h2>
+            <p class="mt-1 text-sm text-gray-500 dark:text-gray-400">{{ t('admin.promptRecords.policyHelp') }}</p>
+            <p class="mt-2 text-xs text-gray-500 dark:text-gray-400" role="status" data-test="prompt-policy-status">
+              {{ t(recordingLoading ? 'common.loading' : recordingEnabled === null ? 'admin.promptRecords.recordingLoadFailed' : policyDirty ? 'admin.promptRecords.policyUnsaved' : 'admin.promptRecords.policyApplied') }}
+            </p>
+          </div>
+          <Icon name="chevronDown" size="sm" class="mt-0.5 shrink-0 text-gray-400 transition-transform group-open:rotate-180 motion-reduce:transition-none" aria-hidden="true" />
+        </summary>
+        <div class="mt-4 space-y-4" data-test="prompt-policy-settings">
+          <div class="flex flex-wrap items-center gap-2">
+            <button v-if="recordingEnabled === null && !recordingLoading" type="button" class="btn btn-secondary text-sm" data-test="prompt-recording-config-retry" @click="loadRecordingConfig">
+              {{ t('admin.promptRecords.retry') }}
+            </button>
+            <button type="button" class="btn btn-secondary text-sm" :disabled="policyBusy" data-test="prompt-policy-recommended" @click="restoreRecommendedPolicy">
+              {{ t('admin.promptRecords.resetRecommendedPolicy') }}
+            </button>
+            <button v-if="policyDirty" type="button" class="btn btn-secondary text-sm" :disabled="policyBusy" data-test="prompt-policy-discard" @click="discardPolicyChanges">
+              {{ t('common.cancel') }}
+            </button>
+            <button type="button" class="btn btn-primary text-sm" :disabled="policyBusy || !policyDirty" data-test="prompt-policy-save" @click="savePolicy">
+              {{ t('common.save') }}
+            </button>
+          </div>
+          <div class="grid gap-4 md:grid-cols-2 xl:grid-cols-4">
+            <fieldset v-for="group in policyGroups" :key="group.key" class="min-w-0 rounded-lg border border-gray-200 p-3 dark:border-dark-700">
+              <legend class="px-1 text-sm font-medium text-gray-900 dark:text-gray-100">{{ t(`admin.promptRecords.policyGroups.${group.key}`) }}</legend>
+              <div v-for="category in group.categories" :key="category" class="flex min-h-11 items-center justify-between gap-3">
+                <span :id="`prompt-policy-label-${category}`" class="text-sm text-gray-700 dark:text-gray-300">{{ t(`admin.promptRecords.keepCategories.${category}`) }}</span>
+                <button type="button" role="switch" class="relative inline-flex h-11 w-12 shrink-0 items-center justify-center rounded-lg focus:outline-none focus-visible:ring-2 focus-visible:ring-primary-500 disabled:opacity-60" :aria-labelledby="`prompt-policy-label-${category}`" :aria-checked="draftPolicy.keep[category]" :disabled="policyBusy" :data-test="`prompt-policy-keep-${category}`" @click="togglePolicyCategory(category)">
+                  <span aria-hidden="true" class="relative inline-flex h-6 w-11 items-center rounded-full border-2 border-transparent transition-colors motion-reduce:transition-none" :class="draftPolicy.keep[category] ? 'bg-primary-600' : 'bg-gray-300 dark:bg-dark-600'">
+                    <span class="pointer-events-none inline-block h-5 w-5 rounded-full bg-white shadow transition-transform motion-reduce:transition-none" :class="draftPolicy.keep[category] ? 'translate-x-5' : 'translate-x-0'" />
+                  </span>
+                </button>
+              </div>
+            </fieldset>
+          </div>
+          <p class="text-xs text-gray-500 dark:text-gray-400">{{ t('admin.promptRecords.alwaysFilteredHelp') }}</p>
+
+          <details class="rounded-lg border border-gray-200 dark:border-dark-700" data-test="prompt-policy-preview">
+            <summary class="cursor-pointer px-4 py-3 text-sm font-medium text-gray-900 focus-visible:outline-primary-500 dark:text-gray-100">{{ t('admin.promptRecords.previewTitle') }}</summary>
+            <div class="space-y-4 border-t border-gray-200 p-4 dark:border-dark-700">
+              <p class="text-xs text-gray-500 dark:text-gray-400">{{ t('admin.promptRecords.previewHelp') }}</p>
+              <form class="space-y-3" data-test="prompt-policy-preview-form" @submit.prevent="runPreview">
+                <div>
+                  <label for="prompt-preview-protocol" class="input-label">{{ t('admin.promptRecords.protocol') }}</label>
+                  <select id="prompt-preview-protocol" v-model="previewProtocol" class="input w-full sm:w-64" :disabled="policyBusy">
+                    <option v-for="protocol in previewProtocols" :key="protocol" :value="protocol">{{ t(`admin.promptRecords.previewProtocols.${protocol}`) }}</option>
+                  </select>
+                </div>
+                <div>
+                  <label for="prompt-preview-body" class="input-label">{{ t('admin.promptRecords.previewInput') }}</label>
+                  <textarea id="prompt-preview-body" v-model="previewBody" rows="7" class="input w-full font-mono text-xs" spellcheck="false" :disabled="policyBusy" :placeholder="t('admin.promptRecords.previewPlaceholder')" />
+                </div>
+                <button type="submit" class="btn btn-secondary text-sm" :disabled="policyBusy || previewLoading || !previewBody.trim()" data-test="prompt-policy-preview-run">
+                  {{ t(previewLoading ? 'common.loading' : 'admin.promptRecords.previewRun') }}
+                </button>
+              </form>
+              <p v-if="previewError" role="alert" class="text-sm text-red-600 dark:text-red-400" data-test="prompt-policy-preview-error">{{ previewError }}</p>
+              <div v-if="preview" class="space-y-4" data-test="prompt-policy-preview-result">
+                <h3 class="text-sm font-semibold text-gray-900 dark:text-white">{{ t('admin.promptRecords.previewOutput') }}</h3>
+                <p class="text-xs text-gray-500 dark:text-gray-400">{{ t('admin.promptRecords.previewMessages', { count: preview.message_count }) }}</p>
+                <p v-if="preview.content_document.truncated" class="text-xs text-amber-700 dark:text-amber-300">{{ t('admin.promptRecords.documentTruncated') }}</p>
+                <div v-for="(block, index) in preview.content_document.blocks" :key="index" class="rounded-lg border border-gray-200 p-3 dark:border-dark-700">
+                  <p class="text-xs font-medium text-gray-500 dark:text-gray-400">{{ categoryLabel(block.category) }}<span v-if="block.name"> · {{ block.name }}</span></p>
+                  <pre class="mt-2 max-h-80 overflow-auto whitespace-pre-wrap break-words text-sm text-gray-800 dark:text-gray-200">{{ formatBlockContent(block) }}</pre>
+                </div>
+                <p v-if="!preview.content_document.blocks.length" class="text-sm text-gray-500 dark:text-gray-400">{{ t('admin.promptRecords.previewEmpty') }}</p>
+                <div class="overflow-x-auto">
+                  <table v-if="previewFiltered.length" class="w-full text-left text-sm" data-test="prompt-policy-preview-filtered">
+                    <caption class="mb-2 text-left font-medium text-gray-900 dark:text-white">{{ t('admin.promptRecords.filteredContent') }}</caption>
+                    <thead><tr class="text-gray-500 dark:text-gray-400"><th scope="col" class="py-2 pr-4">{{ t('admin.promptRecords.contentCategory') }}</th><th scope="col" class="py-2 pr-4">{{ t('admin.promptRecords.filteredCount') }}</th><th scope="col" class="py-2">{{ t('admin.promptRecords.filteredBytes') }}</th></tr></thead>
+                    <tbody><tr v-for="[category, stats] in previewFiltered" :key="category"><th scope="row" class="py-1 pr-4 font-normal">{{ categoryLabel(category) }}</th><td class="py-1 pr-4">{{ formatNumber(stats.count) }}</td><td class="py-1">{{ formatNumber(stats.bytes) }}</td></tr></tbody>
+                  </table>
+                  <p v-else class="text-xs text-gray-500 dark:text-gray-400">{{ t('admin.promptRecords.nothingFiltered') }}</p>
+                </div>
+              </div>
+            </div>
+          </details>
+        </div>
+      </details>
 
       <div class="card overflow-hidden">
         <form
@@ -519,7 +572,7 @@
       <section>
         <div class="flex flex-wrap items-center justify-between gap-2">
           <h4 class="text-sm font-semibold text-gray-900 dark:text-white">
-            {{ t(detail.request_body ? 'admin.promptRecords.requestBody' : 'admin.promptRecords.promptText') }}
+            {{ t(requestDocument ? 'admin.promptRecords.readableContent' : detail.request_body ? 'admin.promptRecords.requestBody' : 'admin.promptRecords.promptText') }}
           </h4>
           <div class="flex items-center gap-2">
             <span class="text-xs text-gray-500 dark:text-gray-400">
@@ -538,7 +591,23 @@
             </button>
           </div>
         </div>
-        <pre class="mt-3 max-h-[48vh] overflow-auto whitespace-pre-wrap break-words rounded-lg border border-gray-200 bg-gray-50 p-4 text-sm leading-6 text-gray-800 dark:border-dark-700 dark:bg-dark-900 dark:text-gray-200">{{ formatRequestContent(detail.request_body || detail.prompt_text) }}</pre>
+        <div v-if="requestDocument" class="mt-3 space-y-3" data-test="prompt-record-content-document">
+          <div v-for="(block, index) in requestDocument.blocks" :key="index" class="rounded-lg border border-gray-200 bg-gray-50 p-4 dark:border-dark-700 dark:bg-dark-900">
+            <p class="text-xs font-medium text-gray-500 dark:text-gray-400">{{ categoryLabel(block.category) }}<span v-if="block.name"> · {{ block.name }}</span><span v-if="block.call_id"> · {{ block.call_id }}</span></p>
+            <pre class="mt-2 max-h-[48vh] overflow-auto whitespace-pre-wrap break-words text-sm leading-6 text-gray-800 dark:text-gray-200">{{ formatBlockContent(block) }}</pre>
+          </div>
+          <p v-if="!requestDocument.blocks.length" class="text-sm text-gray-500 dark:text-gray-400">{{ t('admin.promptRecords.previewEmpty') }}</p>
+          <p v-if="requestDocument.truncated" class="text-xs text-amber-700 dark:text-amber-300">{{ t('admin.promptRecords.documentTruncated') }}</p>
+          <dl v-if="requestFiltered.length" class="text-xs text-gray-500 dark:text-gray-400" data-test="prompt-record-content-filtered">
+            <dt class="font-medium">{{ t('admin.promptRecords.filteredContent') }}</dt>
+            <dd v-for="[category, stats] in requestFiltered" :key="category" class="mt-1">{{ categoryLabel(category) }} · {{ t('admin.promptRecords.filterStats', { count: stats.count, bytes: stats.bytes }) }}</dd>
+          </dl>
+          <details v-if="detail.request_body" class="text-xs text-gray-500 dark:text-gray-400">
+            <summary class="cursor-pointer">{{ t('admin.promptRecords.savedDocumentJSON') }}</summary>
+            <pre class="mt-2 max-h-80 overflow-auto whitespace-pre-wrap break-words">{{ formatRequestContent(detail.request_body) }}</pre>
+          </details>
+        </div>
+        <pre v-else class="mt-3 max-h-[48vh] overflow-auto whitespace-pre-wrap break-words rounded-lg border border-gray-200 bg-gray-50 p-4 text-sm leading-6 text-gray-800 dark:border-dark-700 dark:bg-dark-900 dark:text-gray-200">{{ formatRequestContent(detail.request_body || detail.prompt_text) }}</pre>
       </section>
 
       <section>
@@ -558,7 +627,19 @@
             </span>
           </span>
         </div>
-		<pre class="mt-3 max-h-[48vh] overflow-auto whitespace-pre-wrap break-words rounded-lg border border-gray-200 bg-gray-50 p-4 text-sm leading-6 text-gray-800 dark:border-dark-700 dark:bg-dark-900 dark:text-gray-200">{{ responseDisplayText }}</pre>
+        <div v-if="responseDocument" class="mt-3 space-y-3" data-test="prompt-record-response-document">
+          <div v-for="(block, index) in responseDocument.blocks" :key="index" class="rounded-lg border border-gray-200 bg-gray-50 p-4 dark:border-dark-700 dark:bg-dark-900">
+            <p class="text-xs font-medium text-gray-500 dark:text-gray-400">{{ categoryLabel(block.category) }}<span v-if="block.name"> · {{ block.name }}</span><span v-if="block.call_id"> · {{ block.call_id }}</span></p>
+            <pre class="mt-2 max-h-[48vh] overflow-auto whitespace-pre-wrap break-words text-sm leading-6 text-gray-800 dark:text-gray-200">{{ formatBlockContent(block) }}</pre>
+          </div>
+          <p v-if="!responseDocument.blocks.length" class="text-sm text-gray-500 dark:text-gray-400">{{ responseDisplayText }}</p>
+          <p v-if="responseDocument.truncated" class="text-xs text-amber-700 dark:text-amber-300">{{ t('admin.promptRecords.documentTruncated') }}</p>
+          <dl v-if="responseFiltered.length" class="text-xs text-gray-500 dark:text-gray-400">
+            <dt class="font-medium">{{ t('admin.promptRecords.filteredContent') }}</dt>
+            <dd v-for="[category, stats] in responseFiltered" :key="category" class="mt-1">{{ categoryLabel(category) }} · {{ t('admin.promptRecords.filterStats', { count: stats.count, bytes: stats.bytes }) }}</dd>
+          </dl>
+        </div>
+        <pre v-else class="mt-3 max-h-[48vh] overflow-auto whitespace-pre-wrap break-words rounded-lg border border-gray-200 bg-gray-50 p-4 text-sm leading-6 text-gray-800 dark:border-dark-700 dark:bg-dark-900 dark:text-gray-200">{{ responseDisplayText }}</pre>
       </section>
     </div>
   </BaseDialog>
@@ -575,7 +656,7 @@
 </template>
 
 <script setup lang="ts">
-import { computed, onMounted, onUnmounted, reactive, ref } from 'vue'
+import { computed, onMounted, onUnmounted, reactive, ref, watch } from 'vue'
 import { useI18n } from 'vue-i18n'
 import AppLayout from '@/components/layout/AppLayout.vue'
 import BaseDialog from '@/components/common/BaseDialog.vue'
@@ -596,8 +677,15 @@ import {
   getPromptRecordingConfig,
   getPromptRecord,
   listPromptRecords,
+  previewPromptRecord,
   updatePromptRecordingConfig,
+  type PromptContentBlock,
+  type PromptContentCategory,
+  type PromptContentDocument,
   type PromptRecord,
+  type PromptRecordPreview,
+  type PromptRecordingConfig,
+  type PromptRecordingPolicy,
   type PromptRecordSummary,
 } from './api'
 
@@ -619,6 +707,7 @@ async function saveRetention() {
   try {
     const config = await updatePromptRecordingConfig({ retention_days: retentionDays.value })
     savedRetentionDays.value = retentionDays.value = config.retention_days
+    syncPolicy(config)
     appStore.showSuccess(t('admin.promptRecords.recordingContentSaved'))
   } catch {
     retentionDays.value = savedRetentionDays.value
@@ -635,6 +724,7 @@ async function saveMaxMessages() {
   try {
     const config = await updatePromptRecordingConfig({ max_messages: maxMessages.value })
     savedMaxMessages.value = maxMessages.value = config.max_messages ?? 30
+    syncPolicy(config)
     appStore.showSuccess(t('admin.promptRecords.recordingContentSaved'))
   } catch {
     maxMessages.value = savedMaxMessages.value
@@ -645,20 +735,159 @@ const recordingContent = reactive({
   headers_enabled: true,
   prompt_enabled: true,
   response_enabled: true,
-  filter_preset: false,
-  filter_agent_preset: true,
-  filter_skills: true,
 })
 const contentOptions = [
   { key: 'headers_enabled' as const, label: 'admin.promptRecords.requestHeaders' },
   { key: 'prompt_enabled' as const, label: 'admin.promptRecords.recordingPrompt' },
   { key: 'response_enabled' as const, label: 'admin.promptRecords.recordingResponse' },
-  { key: 'filter_preset' as const, label: 'admin.promptRecords.filterPreset' },
 ]
-const presetFilterOptions = [
-  { key: 'filter_agent_preset' as const, label: 'admin.promptRecords.filterAgentPreset' },
-  { key: 'filter_skills' as const, label: 'admin.promptRecords.filterSkills' },
+
+const policyGroups: { key: string; categories: PromptContentCategory[] }[] = [
+  { key: 'conversation', categories: ['user', 'assistant', 'tool_call', 'tool_result'] },
+  { key: 'instructions', categories: ['system', 'developer', 'instructions'] },
+  { key: 'context', categories: ['project', 'agent', 'environment', 'skills', 'reminder'] },
+  { key: 'internal', categories: ['thinking', 'reasoning_summary', 'tool_definition', 'metadata'] },
 ]
+const savedPolicy = ref<PromptRecordingPolicy>(createRecommendedPolicy())
+const draftPolicy = ref<PromptRecordingPolicy>(createRecommendedPolicy())
+const policyDirty = computed(() => policyGroups.some((group) => group.categories.some((category) => draftPolicy.value.keep[category] !== savedPolicy.value.keep[category])))
+const policyBusy = computed(() => recordingLoading.value || recordingSaving.value || recordingEnabled.value === null)
+const previewProtocol = ref('openai_responses')
+const previewBody = ref('')
+const previewLoading = ref(false)
+const previewError = ref('')
+const preview = ref<PromptRecordPreview | null>(null)
+let previewController: AbortController | null = null
+let previewSequence = 0
+const previewFiltered = computed(() => filteredEntries(preview.value?.content_document))
+const previewProtocols = ['openai_responses', 'openai_chat_completions', 'anthropic_messages', 'gemini']
+
+function clonePolicy(policy: PromptRecordingPolicy): PromptRecordingPolicy {
+  return { version: 1, keep: { ...policy.keep } }
+}
+
+function createRecommendedPolicy(): PromptRecordingPolicy {
+  const readable: PromptContentCategory[] = ['user', 'assistant', 'tool_call', 'tool_result']
+  const keep = Object.fromEntries(policyGroups.flatMap((group) => group.categories).map((category) => [category, readable.includes(category)])) as Record<PromptContentCategory, boolean>
+  return { version: 1, keep }
+}
+
+function restoreRecommendedPolicy() {
+  if (policyBusy.value) return
+  draftPolicy.value = createRecommendedPolicy()
+}
+
+function discardPolicyChanges() {
+  if (policyBusy.value) return
+  draftPolicy.value = clonePolicy(savedPolicy.value)
+}
+
+function togglePolicyCategory(category: PromptContentCategory) {
+  if (policyBusy.value) return
+  draftPolicy.value.keep[category] = !draftPolicy.value.keep[category]
+}
+
+function syncPolicy(config: Partial<PromptRecordingConfig>, resetDraft = false) {
+  if (!Object.prototype.hasOwnProperty.call(config, 'recording_policy') && !resetDraft) return
+  const preserveDraft = policyDirty.value && !resetDraft
+  savedPolicy.value = clonePolicy(config.recording_policy ?? createRecommendedPolicy())
+  if (!preserveDraft) draftPolicy.value = clonePolicy(savedPolicy.value)
+}
+
+async function savePolicy() {
+  if (policyBusy.value || !policyDirty.value) return
+  const policy = clonePolicy(draftPolicy.value)
+  recordingSaving.value = true
+  try {
+    const config = await updatePromptRecordingConfig({ recording_policy: policy })
+    if (!config.recording_policy) throw new Error('Recording policy was not returned by the server')
+    syncPolicy(config, true)
+    appStore.showSuccess(t('admin.promptRecords.policySaved'))
+  } catch {
+    appStore.showError(t('admin.promptRecords.recordingUpdateFailed'))
+  } finally {
+    recordingSaving.value = false
+  }
+}
+
+function invalidatePreview() {
+  previewSequence += 1
+  previewController?.abort()
+  previewController = null
+  preview.value = null
+  previewError.value = ''
+  previewLoading.value = false
+}
+
+watch([previewProtocol, previewBody, maxMessages, () => JSON.stringify(draftPolicy.value)], invalidatePreview)
+
+async function runPreview() {
+  if (previewLoading.value || policyBusy.value) return
+  invalidatePreview()
+  let body: Record<string, unknown>
+  try {
+    const parsed: unknown = JSON.parse(previewBody.value)
+    if (!parsed || typeof parsed !== 'object' || Array.isArray(parsed)) throw new Error('invalid body')
+    body = parsed as Record<string, unknown>
+  } catch {
+    previewError.value = t('admin.promptRecords.previewInvalidJSON')
+    return
+  }
+  if (new TextEncoder().encode(previewBody.value).byteLength > 1024 * 1024) {
+    previewError.value = t('admin.promptRecords.previewTooLarge')
+    return
+  }
+  if (!Number.isInteger(maxMessages.value) || maxMessages.value < 1 || maxMessages.value > 999) {
+    previewError.value = t('admin.promptRecords.invalidMaxMessages')
+    return
+  }
+  const sequence = ++previewSequence
+  const controller = new AbortController()
+  previewController = controller
+  previewLoading.value = true
+  try {
+    const result = await previewPromptRecord({
+      protocol: previewProtocol.value,
+      body,
+      recording_policy: clonePolicy(draftPolicy.value),
+      max_messages: maxMessages.value,
+    }, controller.signal)
+    if (sequence === previewSequence && !controller.signal.aborted) preview.value = result
+  } catch {
+    if (sequence === previewSequence && !controller.signal.aborted) previewError.value = t('admin.promptRecords.previewFailed')
+  } finally {
+    if (sequence === previewSequence) {
+      previewLoading.value = false
+      previewController = null
+    }
+  }
+}
+
+function parseContentDocument(value?: string): PromptContentDocument | null {
+  if (!value) return null
+  try {
+    const document: unknown = JSON.parse(value)
+    if (!document || typeof document !== 'object' || !('blocks' in document) || !Array.isArray(document.blocks)) return null
+    return document as PromptContentDocument
+  } catch { return null }
+}
+
+function formatBlockContent(block: PromptContentBlock) {
+  const parts: string[] = []
+  if (block.text !== undefined) parts.push(block.text)
+  if (Object.prototype.hasOwnProperty.call(block, 'data')) parts.push(JSON.stringify(block.data, null, 2) ?? '')
+  return parts.join('\n')
+}
+
+function categoryLabel(category: string) {
+  if (policyGroups.some((group) => group.categories.includes(category as PromptContentCategory))) return t(`admin.promptRecords.categories.${category}`)
+  if (['encrypted', 'encrypted_content', 'signature', 'media', 'unknown', 'limit'].includes(category)) return t(`admin.promptRecords.categories.${category}`)
+  return category
+}
+
+function filteredEntries(document?: PromptContentDocument | null) {
+  return Object.entries(document?.filtered ?? {}).filter(([, stats]) => stats.count > 0 || stats.bytes > 0)
+}
 
 function formatRequestContent(value?: string) {
   if (!value) return t('admin.promptRecords.requestContentUnavailable')
@@ -670,12 +899,10 @@ async function toggleRecordingContent(key: keyof typeof recordingContent) {
   recordingSaving.value = true
   try {
     const config = await updatePromptRecordingConfig({ [key]: !recordingContent[key] })
-    recordingContent.headers_enabled = config.headers_enabled
-    recordingContent.prompt_enabled = config.prompt_enabled
-    recordingContent.response_enabled = config.response_enabled ?? true
-    recordingContent.filter_preset = config.filter_preset ?? false
-    recordingContent.filter_agent_preset = config.filter_agent_preset ?? true
-    recordingContent.filter_skills = config.filter_skills ?? true
+    recordingContent.headers_enabled = config.headers_enabled ?? recordingContent.headers_enabled
+    recordingContent.prompt_enabled = config.prompt_enabled ?? recordingContent.prompt_enabled
+    recordingContent.response_enabled = config.response_enabled ?? recordingContent.response_enabled
+    syncPolicy(config)
     appStore.showSuccess(t('admin.promptRecords.recordingContentSaved'))
   } catch {
     appStore.showError(t('admin.promptRecords.recordingUpdateFailed'))
@@ -714,6 +941,10 @@ const showDetail = ref(false)
 const detailFullscreen = ref(false)
 const selectedID = ref<number | null>(null)
 const detail = ref<PromptRecord | null>(null)
+const requestDocument = computed(() => parseContentDocument(detail.value?.content_document))
+const responseDocument = computed(() => parseContentDocument(detail.value?.response_document))
+const requestFiltered = computed(() => filteredEntries(requestDocument.value))
+const responseFiltered = computed(() => filteredEntries(responseDocument.value))
 const detailLoading = ref(false)
 const detailError = ref(false)
 let detailRequestSequence = 0
@@ -827,9 +1058,7 @@ async function loadRecordingConfig() {
     recordingContent.headers_enabled = config.headers_enabled ?? true
     recordingContent.prompt_enabled = config.prompt_enabled ?? true
     recordingContent.response_enabled = config.response_enabled ?? true
-    recordingContent.filter_preset = config.filter_preset ?? false
-    recordingContent.filter_agent_preset = config.filter_agent_preset ?? true
-    recordingContent.filter_skills = config.filter_skills ?? true
+    syncPolicy(config, true)
   } catch (error) {
     console.error('[PromptRecordsView] Failed to load prompt recording config:', error)
     appStore.showError(t('admin.promptRecords.recordingLoadFailed'))
@@ -848,9 +1077,7 @@ async function toggleRecording() {
     recordingContent.headers_enabled = config.headers_enabled ?? recordingContent.headers_enabled
     recordingContent.prompt_enabled = config.prompt_enabled ?? recordingContent.prompt_enabled
     recordingContent.response_enabled = config.response_enabled ?? recordingContent.response_enabled
-    recordingContent.filter_preset = config.filter_preset ?? recordingContent.filter_preset
-    recordingContent.filter_agent_preset = config.filter_agent_preset ?? recordingContent.filter_agent_preset
-    recordingContent.filter_skills = config.filter_skills ?? recordingContent.filter_skills
+    syncPolicy(config)
     appStore.showSuccess(t(config.enabled
       ? 'admin.promptRecords.recordingEnabledSuccess'
       : 'admin.promptRecords.recordingDisabledSuccess'))
@@ -1095,6 +1322,7 @@ onMounted(() => {
 })
 onUnmounted(() => {
   listController?.abort()
+  invalidatePreview()
   detailRequestSequence += 1
   userSearchSequence += 1
   if (userSearchTimer) clearTimeout(userSearchTimer)

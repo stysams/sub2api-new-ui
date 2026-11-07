@@ -10,6 +10,7 @@ const mocks = vi.hoisted(() => ({
 		deleteAllPromptRecords: vi.fn(),
 	getPromptRecordingConfig: vi.fn(),
 		updatePromptRecordingConfig: vi.fn(),
+  previewPromptRecord: vi.fn(),
 		copyToClipboard: vi.fn(),
 	  searchUsers: vi.fn(),
   showError: vi.fn(),
@@ -24,6 +25,7 @@ vi.mock('../api', () => ({
 	deleteAllPromptRecords: mocks.deleteAllPromptRecords,
 	getPromptRecordingConfig: mocks.getPromptRecordingConfig,
 	updatePromptRecordingConfig: mocks.updatePromptRecordingConfig,
+  previewPromptRecord: mocks.previewPromptRecord,
 }))
 
 vi.mock('@/api/admin/usage', () => ({
@@ -74,6 +76,16 @@ const summary = {
   created_at: '2026-09-11T12:00:00Z',
 }
 
+const recommendedPolicy = {
+  version: 1,
+  keep: {
+    user: true, assistant: true, tool_call: true, tool_result: true,
+    system: false, developer: false, instructions: false,
+    project: false, agent: false, environment: false, skills: false, reminder: false,
+    thinking: false, reasoning_summary: false, tool_definition: false, metadata: false,
+  },
+}
+
 describe('PromptRecordsView', () => {
   beforeEach(() => {
     Object.values(mocks).forEach((mock) => mock.mockReset())
@@ -110,11 +122,18 @@ describe('PromptRecordsView', () => {
 			headers_enabled: true,
 			prompt_enabled: true,
 			response_enabled: true,
-			filter_preset: false,
-			filter_agent_preset: true,
-			filter_skills: true,
+			recording_policy: recommendedPolicy,
 		})
 		mocks.updatePromptRecordingConfig.mockResolvedValue({ enabled: false })
+    mocks.previewPromptRecord.mockResolvedValue({
+      content_document: {
+        schema_version: 2,
+        blocks: [{ category: 'user', text: 'READABLE_PREVIEW' }],
+        filtered: { thinking: { count: 2, bytes: 321 }, encrypted_content: { count: 1, bytes: 123 } },
+      },
+      text: 'READABLE_PREVIEW',
+      message_count: 1,
+    })
 		mocks.copyToClipboard.mockResolvedValue(true)
     mocks.searchUsers.mockResolvedValue([])
   })
@@ -338,52 +357,6 @@ describe('PromptRecordsView', () => {
     wrapper.unmount()
   })
 
-	it('shows independent preset filters only while preset filtering is enabled', async () => {
-		const wrapper = mount(PromptRecordsView, { global: { stubs: { AppLayout: { template: '<div><slot /></div>' } } } })
-		await flushPromises()
-		const toggle = wrapper.get('[data-test="prompt-recording-filter_preset"]')
-		expect(toggle.attributes('aria-checked')).toBe('false')
-		expect(wrapper.find('[data-test="prompt-recording-preset-options"]').exists()).toBe(false)
-		mocks.updatePromptRecordingConfig.mockResolvedValueOnce({
-			enabled: true, headers_enabled: true, prompt_enabled: true, response_enabled: true,
-			filter_preset: true, filter_agent_preset: true, filter_skills: true,
-		})
-		await toggle.trigger('click')
-		await flushPromises()
-		expect(mocks.updatePromptRecordingConfig).toHaveBeenLastCalledWith({ filter_preset: true })
-		expect(toggle.attributes('aria-checked')).toBe('true')
-		expect(wrapper.find('[data-test="prompt-recording-preset-options"]').exists()).toBe(true)
-		const agentPreset = wrapper.get('[data-test="prompt-recording-filter_agent_preset"]')
-		const skills = wrapper.get('[data-test="prompt-recording-filter_skills"]')
-		expect(agentPreset.attributes('aria-checked')).toBe('true')
-		expect(skills.attributes('aria-checked')).toBe('true')
-
-		mocks.updatePromptRecordingConfig.mockResolvedValueOnce({
-			enabled: true, headers_enabled: true, prompt_enabled: true, response_enabled: true,
-			filter_preset: true, filter_agent_preset: false, filter_skills: true,
-		})
-		await agentPreset.trigger('click')
-		await flushPromises()
-		expect(mocks.updatePromptRecordingConfig).toHaveBeenLastCalledWith({ filter_agent_preset: false })
-		expect(agentPreset.attributes('aria-checked')).toBe('false')
-
-		mocks.updatePromptRecordingConfig.mockRejectedValueOnce(new Error('save failed'))
-		await skills.trigger('click')
-		await flushPromises()
-		expect(mocks.updatePromptRecordingConfig).toHaveBeenLastCalledWith({ filter_skills: false })
-		expect(skills.attributes('aria-checked')).toBe('true')
-
-		mocks.updatePromptRecordingConfig.mockResolvedValueOnce({
-			enabled: true, headers_enabled: true, prompt_enabled: true, response_enabled: true,
-			filter_preset: false, filter_agent_preset: false, filter_skills: true,
-		})
-		await toggle.trigger('click')
-		await flushPromises()
-		expect(toggle.attributes('aria-checked')).toBe('false')
-		expect(wrapper.find('[data-test="prompt-recording-preset-options"]').exists()).toBe(false)
-		wrapper.unmount()
-	})
-
   it('shows the complete request body and headers only in details', async () => {
 		const requestBody = '{"tools":[{"name":"full-request-tool"}]}'
 		mocks.getPromptRecord.mockResolvedValue({ ...summary, request_body: requestBody, request_headers: '{"X-Test":["saved-header"]}' })
@@ -399,6 +372,159 @@ describe('PromptRecordsView', () => {
 		copyButton?.click()
 		await flushPromises()
 		expect(mocks.copyToClipboard).toHaveBeenCalledWith(requestBody, 'admin.promptRecords.requestBodyCopied')
+    wrapper.unmount()
+  })
+
+  it('starts with policy settings collapsed and keeps an unsaved draft when folded', async () => {
+    const wrapper = mount(PromptRecordsView, { global: { stubs: { AppLayout: { template: '<div><slot /></div>' } } } })
+    await flushPromises()
+    const policy = wrapper.get<HTMLDetailsElement>('[data-test="prompt-recording-policy"]')
+    const toggle = wrapper.get('[data-test="prompt-policy-toggle"]')
+    expect(policy.element.tagName).toBe('DETAILS')
+    expect(policy.element.open).toBe(false)
+    expect(policy.element.firstElementChild).toBe(toggle.element)
+    expect(toggle.find('button').exists()).toBe(false)
+
+    await toggle.trigger('click')
+    expect(policy.element.open).toBe(true)
+    await wrapper.get('[data-test="prompt-policy-keep-thinking"]').trigger('click')
+    await toggle.trigger('click')
+    expect(policy.element.open).toBe(false)
+    expect(toggle.get('[data-test="prompt-policy-status"]').text()).toBe('admin.promptRecords.policyUnsaved')
+    await toggle.trigger('click')
+    expect(policy.element.open).toBe(true)
+    expect(wrapper.get('[data-test="prompt-policy-keep-thinking"]').attributes('aria-checked')).toBe('true')
+    expect(mocks.updatePromptRecordingConfig).not.toHaveBeenCalled()
+    wrapper.unmount()
+  })
+
+  it.each([undefined, null])('shows all recommended category switches when no policy is returned (%s)', async (recordingPolicy) => {
+    mocks.getPromptRecordingConfig.mockResolvedValue({ enabled: true, recording_policy: recordingPolicy })
+    const wrapper = mount(PromptRecordsView, { global: { stubs: { AppLayout: { template: '<div><slot /></div>' } } } })
+    await flushPromises()
+    expect(wrapper.findAll('[data-test^="prompt-policy-keep-"]')).toHaveLength(16)
+    for (const [category, keep] of Object.entries(recommendedPolicy.keep)) {
+      expect(wrapper.get(`[data-test="prompt-policy-keep-${category}"]`).attributes('aria-checked')).toBe(String(keep))
+    }
+    expect(wrapper.find('[data-test^="prompt-recording-filter_"]').exists()).toBe(false)
+    expect(wrapper.find('[data-test="prompt-recording-preset-options"]').exists()).toBe(false)
+    expect(wrapper.get('[data-test="prompt-policy-recommended"]').text()).toBe('admin.promptRecords.resetRecommendedPolicy')
+    expect(wrapper.get('[data-test="prompt-policy-save"]').attributes('disabled')).toBeDefined()
+    expect(mocks.updatePromptRecordingConfig).not.toHaveBeenCalled()
+    wrapper.unmount()
+  })
+
+  it('restores recommended values only in the draft and saves the complete policy', async () => {
+    const savedPolicy = { ...recommendedPolicy, keep: { ...recommendedPolicy.keep, system: true, thinking: true } }
+    mocks.getPromptRecordingConfig.mockResolvedValue({ enabled: true, recording_policy: savedPolicy })
+    const wrapper = mount(PromptRecordsView, { global: { stubs: { AppLayout: { template: '<div><slot /></div>' } } } })
+    await flushPromises()
+    expect(wrapper.get('[data-test="prompt-policy-keep-system"]').attributes('aria-checked')).toBe('true')
+    expect(wrapper.get('[data-test="prompt-policy-keep-thinking"]').attributes('aria-checked')).toBe('true')
+
+    await wrapper.get('[data-test="prompt-policy-recommended"]').trigger('click')
+    expect(mocks.updatePromptRecordingConfig).not.toHaveBeenCalled()
+    expect(wrapper.get('[data-test="prompt-policy-keep-system"]').attributes('aria-checked')).toBe('false')
+    expect(wrapper.get('[data-test="prompt-policy-keep-thinking"]').attributes('aria-checked')).toBe('false')
+    expect(wrapper.get('[data-test="prompt-policy-save"]').attributes('disabled')).toBeUndefined()
+    await wrapper.get('[data-test="prompt-policy-discard"]').trigger('click')
+    expect(wrapper.get('[data-test="prompt-policy-keep-system"]').attributes('aria-checked')).toBe('true')
+    expect(wrapper.get('[data-test="prompt-policy-keep-thinking"]').attributes('aria-checked')).toBe('true')
+
+    await wrapper.get('[data-test="prompt-policy-recommended"]').trigger('click')
+    mocks.updatePromptRecordingConfig.mockResolvedValueOnce({ recording_policy: recommendedPolicy })
+    await wrapper.get('[data-test="prompt-policy-save"]').trigger('click')
+    await flushPromises()
+    expect(mocks.updatePromptRecordingConfig).toHaveBeenCalledTimes(1)
+    expect(mocks.updatePromptRecordingConfig).toHaveBeenCalledWith({ recording_policy: recommendedPolicy })
+    expect(wrapper.get('[data-test="prompt-policy-save"]').attributes('disabled')).toBeDefined()
+    expect(wrapper.get('[data-test="prompt-policy-status"]').text()).toBe('admin.promptRecords.policyApplied')
+    wrapper.unmount()
+  })
+
+  it('preserves policy drafts across other setting updates and save failures', async () => {
+    mocks.getPromptRecordingConfig.mockResolvedValue({ enabled: true, recording_policy: recommendedPolicy })
+    const wrapper = mount(PromptRecordsView, { global: { stubs: { AppLayout: { template: '<div><slot /></div>' } } } })
+    await flushPromises()
+    await wrapper.get('[data-test="prompt-policy-keep-system"]').trigger('click')
+    expect(mocks.updatePromptRecordingConfig).not.toHaveBeenCalled()
+    mocks.updatePromptRecordingConfig.mockResolvedValueOnce({ enabled: true, headers_enabled: false, recording_policy: recommendedPolicy })
+    await wrapper.get('[data-test="prompt-recording-headers_enabled"]').trigger('click')
+    await flushPromises()
+    expect(wrapper.get('[data-test="prompt-policy-keep-system"]').attributes('aria-checked')).toBe('true')
+
+    mocks.updatePromptRecordingConfig.mockRejectedValueOnce(new Error('save failed'))
+    await wrapper.get('[data-test="prompt-policy-save"]').trigger('click')
+    await flushPromises()
+    expect(mocks.updatePromptRecordingConfig).toHaveBeenLastCalledWith({ recording_policy: { ...recommendedPolicy, keep: { ...recommendedPolicy.keep, system: true } } })
+    expect(wrapper.get('[data-test="prompt-policy-keep-system"]').attributes('aria-checked')).toBe('true')
+    expect(wrapper.get('[data-test="prompt-policy-save"]').attributes('disabled')).toBeUndefined()
+    expect(mocks.showError).toHaveBeenCalledWith('admin.promptRecords.recordingUpdateFailed')
+    await wrapper.get('[data-test="prompt-policy-discard"]').trigger('click')
+    expect(wrapper.get('[data-test="prompt-policy-keep-system"]').attributes('aria-checked')).toBe('false')
+    wrapper.unmount()
+  })
+
+  it('previews the draft without saving and clears stale results when inputs change', async () => {
+    const wrapper = mount(PromptRecordsView, { global: { stubs: { AppLayout: { template: '<div><slot /></div>' } } } })
+    await flushPromises()
+    const input = wrapper.get('#prompt-preview-body')
+    await input.setValue('invalid')
+    await wrapper.get('[data-test="prompt-policy-preview-form"]').trigger('submit')
+    expect(mocks.previewPromptRecord).not.toHaveBeenCalled()
+    expect(wrapper.get('[data-test="prompt-policy-preview-error"]').text()).toBe('admin.promptRecords.previewInvalidJSON')
+
+    const body = { input: 'READABLE_PREVIEW' }
+    await input.setValue(JSON.stringify(body))
+    await wrapper.get('[data-test="prompt-policy-preview-form"]').trigger('submit')
+    await flushPromises()
+    expect(mocks.previewPromptRecord).toHaveBeenCalledWith({ protocol: 'openai_responses', body, recording_policy: recommendedPolicy, max_messages: 30 }, expect.any(AbortSignal))
+    expect(mocks.updatePromptRecordingConfig).not.toHaveBeenCalled()
+    expect(wrapper.get('[data-test="prompt-policy-preview-result"]').text()).toContain('READABLE_PREVIEW')
+    expect(wrapper.get('[data-test="prompt-policy-preview-filtered"]').text()).toContain('321')
+    expect(wrapper.get('[data-test="prompt-policy-preview-filtered"]').text()).toContain('123')
+    await wrapper.get('[data-test="prompt-policy-keep-thinking"]').trigger('click')
+    expect(wrapper.find('[data-test="prompt-policy-preview-result"]').exists()).toBe(false)
+    wrapper.unmount()
+  })
+
+  it('ignores an outdated preview that finishes after the request source changes', async () => {
+    let resolvePreview!: (value: unknown) => void
+    mocks.previewPromptRecord.mockImplementationOnce(() => new Promise((resolve) => { resolvePreview = resolve }))
+    const wrapper = mount(PromptRecordsView, { global: { stubs: { AppLayout: { template: '<div><slot /></div>' } } } })
+    await flushPromises()
+    await wrapper.get('#prompt-preview-body').setValue('{"input":"old"}')
+    await wrapper.get('[data-test="prompt-policy-preview-form"]').trigger('submit')
+    const signal = mocks.previewPromptRecord.mock.calls[0][1] as AbortSignal
+    await wrapper.get('#prompt-preview-body').setValue('{"input":"new"}')
+    expect(signal.aborted).toBe(true)
+    resolvePreview({ content_document: { schema_version: 2, blocks: [{ category: 'user', text: 'OLD_RESULT' }], filtered: {} }, text: 'OLD_RESULT', message_count: 1 })
+    await flushPromises()
+    expect(wrapper.find('[data-test="prompt-policy-preview-result"]').exists()).toBe(false)
+    expect(wrapper.text()).not.toContain('OLD_RESULT')
+    wrapper.unmount()
+  })
+
+  it('shows normalized request and response blocks including structured tool values', async () => {
+    mocks.getPromptRecord.mockResolvedValue({
+      ...summary,
+      content_document: JSON.stringify({ schema_version: 2, blocks: [{ category: 'user', text: 'VISIBLE_REQUEST' }, { category: 'tool_result', data: { valid: false, count: 0, next: null } }], filtered: { thinking: { count: 1, bytes: 12 } } }),
+      response_document: JSON.stringify({ schema_version: 2, blocks: [{ category: 'tool_call', name: 'read_file', data: { path: 'main.go' } }], filtered: {} }),
+      response_text: '',
+      response_captured_at: '2026-09-11T12:00:02Z',
+    })
+    const wrapper = mount(PromptRecordsView, { attachTo: document.body, global: { stubs: { AppLayout: { template: '<div><slot /></div>' } } } })
+    await flushPromises()
+    await wrapper.get('[data-test="prompt-record-detail-7"]').trigger('click')
+    await flushPromises()
+    const request = document.body.querySelector('[data-test="prompt-record-content-document"]')
+    expect(request?.textContent).toContain('VISIBLE_REQUEST')
+    expect(request?.textContent).toContain('"valid": false')
+    expect(request?.textContent).toContain('"count": 0')
+    expect(request?.textContent).toContain('"next": null')
+    const response = document.body.querySelector('[data-test="prompt-record-response-document"]')
+    expect(response?.textContent).toContain('read_file')
+    expect(response?.textContent).toContain('main.go')
     wrapper.unmount()
   })
 

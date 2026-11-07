@@ -3,8 +3,11 @@ package securityaudit
 import (
 	"context"
 	"encoding/base64"
+	"encoding/json"
 	"errors"
+	"io"
 	"math"
+	"net/http"
 	"strconv"
 	"strings"
 	"time"
@@ -65,8 +68,14 @@ func (h *PromptAdminHandler) UpdatePromptRecordingConfig(c *gin.Context) {
 		return
 	}
 	var request PromptRecordingSettingsUpdate
-	if err := c.ShouldBindJSON(&request); err != nil || request.Empty() {
-		response.ErrorFrom(c, infraerrors.BadRequest("prompt_recording_invalid_request", "必须提供记录开关状态"))
+	decoder := json.NewDecoder(c.Request.Body)
+	decoder.DisallowUnknownFields()
+	if err := decoder.Decode(&request); err != nil || request.Empty() {
+		response.ErrorFrom(c, infraerrors.BadRequest("prompt_recording_invalid_request", "请提供有效的记录设置，且仅包含受支持的字段"))
+		return
+	}
+	if err := decoder.Decode(new(any)); err != io.EOF {
+		response.ErrorFrom(c, infraerrors.BadRequest("prompt_recording_invalid_request", "记录设置必须是单个 JSON 对象"))
 		return
 	}
 	var config PromptRecordingConfig
@@ -76,6 +85,10 @@ func (h *PromptAdminHandler) UpdatePromptRecordingConfig(c *gin.Context) {
 	}
 	if request.MaxMessages != nil && (*request.MaxMessages < 1 || *request.MaxMessages > 999) {
 		response.ErrorFrom(c, infraerrors.BadRequest("prompt_recording_invalid_max_messages", "消息条数必须在 1 至 999 之间"))
+		return
+	}
+	if err := validatePromptRecordingSettingsUpdate(request); err != nil {
+		response.ErrorFrom(c, infraerrors.BadRequest("prompt_recording_invalid_policy", err.Error()))
 		return
 	}
 	var err error
@@ -95,10 +108,63 @@ func (h *PromptAdminHandler) UpdatePromptRecordingConfig(c *gin.Context) {
 	}
 	setPromptAdminAudit(c, "success", "", map[string]any{
 		"enabled": config.Enabled, "headers_enabled": config.HeadersEnabled, "prompt_enabled": config.PromptEnabled,
-		"response_enabled": config.ResponseEnabled, "filter_preset": config.FilterPreset,
-		"filter_agent_preset": config.FilterAgentPreset, "filter_skills": config.FilterSkills,
+		"response_enabled": config.ResponseEnabled,
+		"recording_policy": config.RecordingPolicy,
 	})
 	response.Success(c, config)
+}
+
+// PreviewPromptRecording performs the same content analysis as recording and
+// does not save records or alter the active recording settings.
+func (h *PromptAdminHandler) PreviewPromptRecording(c *gin.Context) {
+	const maxPreviewBodyBytes = 1 << 20
+	c.Request.Body = http.MaxBytesReader(c.Writer, c.Request.Body, maxPreviewBodyBytes)
+	var request struct {
+		Protocol        string                 `json:"protocol"`
+		Body            json.RawMessage        `json:"body"`
+		RecordingPolicy *PromptRecordingPolicy `json:"recording_policy"`
+		MaxMessages     *int                   `json:"max_messages"`
+	}
+	if err := c.ShouldBindJSON(&request); err != nil {
+		var tooLarge *http.MaxBytesError
+		if errors.As(err, &tooLarge) {
+			response.Error(c, http.StatusRequestEntityTooLarge, "预览内容不能超过 1 MiB")
+		} else {
+			response.ErrorFrom(c, infraerrors.BadRequest("prompt_recording_invalid_preview", "预览请求格式无效"))
+		}
+		return
+	}
+	if request.RecordingPolicy == nil {
+		response.ErrorFrom(c, infraerrors.BadRequest("prompt_recording_invalid_policy", "预览必须提供完整的记录内容策略"))
+		return
+	}
+	if err := ValidatePromptRecordingPolicy(*request.RecordingPolicy); err != nil {
+		response.ErrorFrom(c, infraerrors.BadRequest("prompt_recording_invalid_policy", err.Error()))
+		return
+	}
+	if strings.TrimSpace(request.Protocol) == "" || len(request.Protocol) > 128 || len(request.Body) == 0 || string(request.Body) == "null" {
+		response.ErrorFrom(c, infraerrors.BadRequest("prompt_recording_invalid_preview", "必须提供协议和待预览的内容"))
+		return
+	}
+	maxMessages := promptRecordDefaultMaxMessages
+	if request.MaxMessages != nil {
+		if *request.MaxMessages < 1 || *request.MaxMessages > 999 {
+			response.ErrorFrom(c, infraerrors.BadRequest("prompt_recording_invalid_max_messages", "消息条数必须在 1 至 999 之间"))
+			return
+		}
+		maxMessages = *request.MaxMessages
+	}
+	var body any
+	if err := json.Unmarshal(request.Body, &body); err != nil {
+		response.ErrorFrom(c, infraerrors.BadRequest("prompt_recording_invalid_preview", "待预览的内容必须是有效 JSON"))
+		return
+	}
+	document := AnalyzePromptContent(request.Protocol, body, *request.RecordingPolicy, maxMessages)
+	response.Success(c, gin.H{
+		"content_document": document,
+		"text":             PromptContentText(document),
+		"message_count":    PromptContentMessageCount(document),
+	})
 }
 
 func (h *PromptAdminHandler) ListPromptRecords(c *gin.Context) {

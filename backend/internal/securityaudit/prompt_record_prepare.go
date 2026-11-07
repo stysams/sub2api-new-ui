@@ -115,21 +115,24 @@ func preparePromptRecord(req Request) (preparedPromptRecord, error) {
 		prepared.StoredSnapshot.MessageCount = 0
 		return prepared, nil
 	}
-
-	storedDocument := sanitizePromptRecordDocument(req.Protocol, document, promptRecordFilterOptions{
-		Enabled: req.recordingFilterPreset, AgentPreset: req.recordingFilterAgent, Skills: req.recordingFilterSkills,
-	})
-	maxMessages := req.recordingMaxMessages
-	if maxMessages < 1 || maxMessages > 999 {
-		maxMessages = promptRecordDefaultMaxMessages
-	}
-	storedDocument = truncatePromptRecordMessages(storedDocument, maxMessages)
-	prepared.StoredBody, err = json.Marshal(storedDocument)
+	content := AnalyzePromptContent(req.Protocol, document, promptRecordingRequestPolicy(req), req.recordingMaxMessages)
+	prepared.StoredBody, err = json.Marshal(content)
 	if err != nil {
 		return preparedPromptRecord{}, err
 	}
-	prepared.StoredSnapshot = promptRecordSnapshotDocument(req, storedDocument, prepared.StoredBody)
+	text := PromptContentText(content)
+	prepared.StoredSnapshot = promptRecordMetadata(req)
+	prepared.StoredSnapshot.FullPrompt = BuildFullPrompt(text, DefaultFullPromptMaxRunes)
+	prepared.StoredSnapshot.PromptLength = utf8.RuneCountInString(text)
+	prepared.StoredSnapshot.MessageCount = PromptContentMessageCount(content)
 	return prepared, nil
+}
+
+func promptRecordingRequestPolicy(req Request) PromptRecordingPolicy {
+	if req.recordingConfig != nil && req.recordingConfig.RecordingPolicy != nil {
+		return *req.recordingConfig.RecordingPolicy
+	}
+	return RecommendedPromptRecordingPolicy()
 }
 
 func promptRecordSnapshotDocument(req Request, document any, fallbackBody []byte) PromptSnapshot {
@@ -140,7 +143,8 @@ func promptRecordSnapshotDocument(req Request, document any, fallbackBody []byte
 // compatible with auditing without running redaction or materializing scan text.
 func promptRecordMetadataDocument(req Request, document any, fallbackBody []byte, includeText bool) PromptSnapshot {
 	snapshot := promptRecordMetadata(req)
-	segments := normalizeSegmentsLatestUserFirst(extractProtocolSegments(req.Protocol, document))
+	extracted := extractProtocolSegments(req.Protocol, document)
+	segments := normalizeSegmentsLatestUserFirst(extracted)
 	if len(segments) == 0 {
 		sum := sha256.Sum256(fallbackBody)
 		snapshot.PromptHash = hex.EncodeToString(sum[:])

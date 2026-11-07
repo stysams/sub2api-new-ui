@@ -86,10 +86,21 @@ func (c *Coordinator) RecordResponse(ctx context.Context, req Request, response 
 }
 
 func (c *Coordinator) PreparePromptRecording(req Request) (Request, Request) {
+	if c != nil && c.record != nil {
+		if provider, ok := c.record.(interface{ GetPromptRecordingConfig() PromptRecordingConfig }); ok {
+			config := provider.GetPromptRecordingConfig()
+			config.RecordingPolicy = ClonePromptRecordingPolicy(config.RecordingPolicy)
+			req.recordingConfig = &config
+		}
+	}
 	responseReference := req
 	responseReference.Body = nil
 	responseReference.Headers = nil
-	if c == nil || !c.PromptResponseRecordingEnabled() || !ShouldRecordPromptRequest(req) {
+	enabled := c != nil && c.PromptResponseRecordingEnabled()
+	if req.recordingConfig != nil {
+		enabled = req.recordingConfig.Enabled && req.recordingConfig.ResponseEnabled
+	}
+	if !enabled || !ShouldRecordPromptRequest(req) {
 		return req, responseReference
 	}
 	return newPromptRecordingRequestPair(req)

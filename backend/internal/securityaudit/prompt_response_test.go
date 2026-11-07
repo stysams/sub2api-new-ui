@@ -1,6 +1,7 @@
 package securityaudit
 
 import (
+	"encoding/json"
 	"strings"
 	"testing"
 	"unicode/utf8"
@@ -8,7 +9,7 @@ import (
 	"github.com/stretchr/testify/require"
 )
 
-func TestExtractResponseTextJSONProtocols(t *testing.T) {
+func TestExtractRecordedResponseJSONProtocolsWithoutSnapshot(t *testing.T) {
 	for _, test := range []struct {
 		name string
 		body string
@@ -20,15 +21,17 @@ func TestExtractResponseTextJSONProtocols(t *testing.T) {
 		{name: "gemini", body: `{"candidates":[{"content":{"parts":[{"text":"gemini"}]}}]}`, want: "gemini"},
 	} {
 		t.Run(test.name, func(t *testing.T) {
-			result := ExtractResponseText([]byte(test.body), false)
-			require.True(t, result.Recognized)
+			result, recognized := ExtractRecordedResponse(Request{}, []byte(test.body), false)
+			require.True(t, recognized)
 			require.Equal(t, test.want, result.Text)
+			require.Equal(t, utf8.RuneCountInString(result.Text), result.Length)
+			require.True(t, json.Valid([]byte(result.Document)))
 			require.False(t, result.Truncated)
 		})
 	}
 }
 
-func TestExtractResponseTextSSEUsesDeltasWithoutDuplicatingFinalResponse(t *testing.T) {
+func TestExtractRecordedResponseSSEUsesDeltasWithoutDuplicatingFinalResponse(t *testing.T) {
 	body := strings.Join([]string{
 		`event: response.output_text.delta`,
 		`data: {"type":"response.output_text.delta","delta":"hel"}`,
@@ -41,19 +44,25 @@ func TestExtractResponseTextSSEUsesDeltasWithoutDuplicatingFinalResponse(t *test
 		``,
 		`data: [DONE]`,
 	}, "\n")
-	result := ExtractResponseText([]byte(body), false)
-	require.True(t, result.Recognized)
+	result, recognized := ExtractRecordedResponse(Request{}, []byte(body), false)
+	require.True(t, recognized)
 	require.Equal(t, "hello", result.Text)
 }
 
-func TestExtractResponseTextMarksCaptureAndStorageTruncation(t *testing.T) {
-	result := ExtractResponseText([]byte(`{"choices":[{"message":{"content":"hello"}}]}`), true)
+func TestExtractRecordedResponseMarksCaptureAndStorageTruncation(t *testing.T) {
+	result, recognized := ExtractRecordedResponse(Request{}, []byte(`{"choices":[{"message":{"content":"hello"}}]}`), true)
+	require.True(t, recognized)
 	require.True(t, result.Truncated)
 
 	longText := strings.Repeat("你", PromptResponseTextLimit)
 	payload := `{"choices":[{"message":{"content":"` + longText + `"}}]}`
-	result = ExtractResponseText([]byte(payload), false)
+	result, recognized = ExtractRecordedResponse(Request{}, []byte(payload), false)
+	require.True(t, recognized)
 	require.True(t, result.Truncated)
-	require.True(t, len(result.Text) <= PromptResponseTextLimit)
+	require.NotEmpty(t, result.Text)
+	require.LessOrEqual(t, len(result.Text), PromptResponseTextLimit)
+	require.LessOrEqual(t, len(result.Document), PromptResponseTextLimit)
+	require.Equal(t, utf8.RuneCountInString(result.Text), result.Length)
+	require.True(t, json.Valid([]byte(result.Document)))
 	require.True(t, utf8.ValidString(result.Text))
 }

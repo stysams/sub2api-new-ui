@@ -168,6 +168,7 @@ func registerPromptRecordRoutes(admin *gin.RouterGroup, h *handler.Handlers) {
 		records.GET("", h.Admin.PromptAudit.ListPromptRecords)
 		records.GET("/recording", h.Admin.PromptAudit.GetPromptRecordingConfig)
 		records.PUT("/recording", h.Admin.PromptAudit.UpdatePromptRecordingConfig)
+		records.POST("/preview", h.Admin.PromptAudit.PreviewPromptRecording)
 		records.POST("/batch-delete", h.Admin.PromptAudit.BatchDeletePromptRecords)
 		records.DELETE("/all", h.Admin.PromptAudit.DeleteAllPromptRecords)
 		records.GET("/:id", h.Admin.PromptAudit.GetPromptRecord)
