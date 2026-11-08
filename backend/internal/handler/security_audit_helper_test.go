@@ -25,6 +25,18 @@ func TestCachesSecurityAuditCompletionSkipsWebSocketStages(t *testing.T) {
 	require.False(t, isSecurityAuditWebSocketStage("http"))
 }
 
+func TestPromptRecordingRecognizesCanonicalGeminiEndpointButSkipsCountTokens(t *testing.T) {
+	gin.SetMode(gin.TestMode)
+	makeRequest := func(path string) securityaudit.Request {
+		recorder := httptest.NewRecorder()
+		ctx, _ := gin.CreateTestContext(recorder)
+		ctx.Request = httptest.NewRequest(http.MethodPost, path, nil)
+		return buildSecurityAuditRequest(ctx, nil, middleware2.AuthSubject{}, "gemini", "gemini-test", []byte(`{"contents":[]}`), "http")
+	}
+	require.True(t, securityaudit.ShouldRecordPromptRequest(makeRequest("/v1beta/models/gemini-test:generateContent")))
+	require.False(t, securityaudit.ShouldRecordPromptRequest(makeRequest("/v1beta/models/gemini-test:countTokens")))
+}
+
 func TestRunSecurityAuditDoesNotSkipSubsequentWebSocketTurns(t *testing.T) {
 	gin.SetMode(gin.TestMode)
 	engine := &turnCountingEngine{mode: securityaudit.ModeAsync}

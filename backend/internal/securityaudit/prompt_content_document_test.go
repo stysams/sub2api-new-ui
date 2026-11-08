@@ -296,7 +296,7 @@ func TestPromptContentDocumentResponseAndBatchEnvelopes(t *testing.T) {
 }
 
 func TestPromptContentDocumentCarrierAndCompactionItems(t *testing.T) {
-	input := contentTestDecode(t, `{"input":[{"type":"additional_tools","role":"developer","tools":[{"name":"DEFINITION"}]},{"type":"additional_tools","tools":[{"name":"DEFINITION_TWO"}]},{"type":"item_reference","id":"item1"},{"type":"computer_initialize_state","state":"INIT_STATE"},{"type":"compaction_trigger","value":"TRIGGER"},{"type":"tool_search_output","call_id":"search1","output":"SEARCH_RESULT"},{"type":"compaction_summary","summary":[{"type":"summary_text","text":"SUMMARY"}],"encrypted_content":"COMPACTION_SECRET"},{"role":"assistant","content":null,"refusal":"REFUSAL"}]}`)
+	input := contentTestDecode(t, `{"input":[{"type":"additional_tools","role":"developer","tools":[{"name":"DEFINITION"}]},{"type":"additional_tools","tools":[{"name":"DEFINITION_TWO"}]},{"type":"item_reference","id":"item1"},{"type":"computer_initialize_state","state":"INIT_STATE"},{"type":"compaction_trigger","value":"TRIGGER"},{"type":"compaction","content":"OPAQUE_COMPACTION"},{"type":"tool_search_output","call_id":"search1","output":"SEARCH_RESULT"},{"type":"compaction_summary","summary":[{"type":"summary_text","text":"SUMMARY"}],"encrypted_content":"COMPACTION_SECRET"},{"role":"assistant","content":null,"refusal":"REFUSAL"}]}`)
 	result := AnalyzePromptContent("responses", input, RecommendedPromptRecordingPolicy(), 30)
 	require.Equal(t, "tool_result", result.Blocks[0].Category)
 	require.Contains(t, PromptContentText(result), "SEARCH_RESULT")
@@ -309,7 +309,75 @@ func TestPromptContentDocumentCarrierAndCompactionItems(t *testing.T) {
 	require.Contains(t, PromptContentText(all), "SUMMARY")
 	require.Contains(t, PromptContentText(all), "DEFINITION_TWO")
 	require.NotContains(t, PromptContentText(all), "COMPACTION_SECRET")
+	require.NotContains(t, PromptContentText(all), "OPAQUE_COMPACTION")
 	require.Equal(t, 1, PromptContentMessageCount(all), "only the assistant refusal consumes a dialogue message slot")
+}
+
+func TestPromptContentDocumentResponsesRoleFreeTextAndToolNames(t *testing.T) {
+	input := contentTestDecode(t, `{"tools":[{"type":"function","function":{"name":"read_file","description":"READ_FILE_DEFINITION"}},{"type":"namespace","name":"mcp__weather__","tools":[{"name":"forecast"}]}],"input":[{"type":"message","role":"user","content":[{"type":"input_text","text":"INPUT_TEXT"},{"type":"output_text","text":"MESSAGE_OUTPUT"}]},{"type":"output_text","text":"STANDALONE_OUTPUT"},{"type":"message","content":"ROLE_FREE_MESSAGE"}],"output":[{"type":"message","content":[{"type":"output_text","text":"OUTPUT_MESSAGE"}]}]}`)
+	policy := contentTestPolicyAll()
+	result := AnalyzePromptContent("responses", input, policy, 30)
+	require.Contains(t, PromptContentText(result), "INPUT_TEXT")
+	require.Contains(t, PromptContentText(result), "MESSAGE_OUTPUT")
+	require.Contains(t, PromptContentText(result), "STANDALONE_OUTPUT")
+	require.Contains(t, PromptContentText(result), "OUTPUT_MESSAGE")
+	require.Contains(t, PromptContentText(result), "ROLE_FREE_MESSAGE")
+	var userText, assistantText bool
+	var names []string
+	for _, block := range result.Blocks {
+		if block.Category == "user" && block.Text == "INPUT_TEXT" {
+			userText = true
+		}
+		if block.Category == "assistant" && (block.Text == "MESSAGE_OUTPUT" || block.Text == "STANDALONE_OUTPUT" || block.Text == "OUTPUT_MESSAGE" || block.Text == "ROLE_FREE_MESSAGE") {
+			assistantText = true
+		}
+		if block.Category == "tool_definition" {
+			names = append(names, block.Name)
+		}
+	}
+	require.True(t, userText)
+	require.True(t, assistantText)
+	require.ElementsMatch(t, []string{"read_file", "weather"}, names)
+	require.Equal(t, 4, PromptContentMessageCount(result))
+
+	policy.Keep["user"] = false
+	filtered := AnalyzePromptContent("responses", input, policy, 30)
+	require.NotContains(t, PromptContentText(filtered), "INPUT_TEXT")
+	require.Contains(t, PromptContentText(filtered), "OUTPUT_MESSAGE")
+	require.Contains(t, PromptContentText(filtered), "ROLE_FREE_MESSAGE")
+}
+
+func TestPromptContentDocumentClaudeTextDocumentsAndHarnessTags(t *testing.T) {
+	input := contentTestDecode(t, `{"instructions":"You are Claude Code","messages":[{"role":"user","content":[{"type":"document","source":{"type":"text","data":"DIRECT_TEXT_DOCUMENT"}},{"type":"document","source":{"type":"base64","media_type":"application/pdf","data":"BINARY_DOCUMENT"}},{"type":"document","source":{"type":"base64","media_type":"text/plain","data":"BASE64_TEXT_MIME"}},{"type":"tool_result","tool_use_id":"read","content":[{"type":"document","source":{"type":"text","data":"TOOL_TEXT_DOCUMENT"}},{"type":"document","source":{"type":"base64","data":"TOOL_BINARY_DOCUMENT"}}]}]},{"role":"developer","content":"Contents of /project/CLAUDE.md (project instructions, checked into the codebase):\nPROJECT_INSTRUCTIONS\n"},{"role":"developer","content":"The following skills are available for use with the Skill tool:\n- skill-a: SKILL_INSTRUCTIONS\n\nDeveloper follow-up"},{"role":"user","content":"Before <system-reminder source=\"claude\">INJECTED_REMINDER</system-reminder> after"}]}`)
+	policy := contentTestPolicyAll()
+	result := AnalyzePromptContent("anthropic_messages", input, policy, 30)
+	text := PromptContentText(result)
+	for _, marker := range []string{"TEXT_DOCUMENT", "TOOL_TEXT_DOCUMENT", "PROJECT_INSTRUCTIONS", "SKILL_INSTRUCTIONS", "INJECTED_REMINDER", "Before ", " after"} {
+		require.Contains(t, text, marker)
+	}
+	for _, marker := range []string{"BINARY_DOCUMENT", "TOOL_BINARY_DOCUMENT", "BASE64_TEXT_MIME"} {
+		require.NotContains(t, text, marker)
+	}
+	categories := make(map[string]bool)
+	for _, block := range result.Blocks {
+		categories[block.Category] = true
+	}
+	require.True(t, categories["project"])
+	require.True(t, categories["skills"])
+	require.True(t, categories["reminder"])
+	require.GreaterOrEqual(t, result.Filtered["media"].Count, 2)
+
+	filtered := RecommendedPromptRecordingPolicy()
+	filtered.Keep["user"] = false
+	filtered.Keep["project"] = true
+	filtered.Keep["skills"] = true
+	filtered.Keep["reminder"] = true
+	filteredResult := AnalyzePromptContent("anthropic_messages", input, filtered, 30)
+	require.Contains(t, PromptContentText(filteredResult), "PROJECT_INSTRUCTIONS")
+	require.Contains(t, PromptContentText(filteredResult), "SKILL_INSTRUCTIONS")
+	require.Contains(t, PromptContentText(filteredResult), "INJECTED_REMINDER")
+	require.NotContains(t, PromptContentText(filteredResult), "DIRECT_TEXT_DOCUMENT")
+	require.Contains(t, PromptContentText(filteredResult), "TOOL_TEXT_DOCUMENT")
 }
 
 func TestPromptContentDocumentUnlimitedResponseMessages(t *testing.T) {

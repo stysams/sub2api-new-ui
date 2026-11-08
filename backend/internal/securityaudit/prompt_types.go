@@ -90,6 +90,7 @@ type Request struct {
 	Headers    http.Header
 	// Recording exclusions are captured before queueing and do not affect auditing.
 	recordingSessionID     string
+	recordingExcluded      bool
 	recordingSkipHeaders   bool
 	recordingSkipPrompt    bool
 	recordingCorrelation   *promptRecordCorrelation
@@ -99,6 +100,14 @@ type Request struct {
 	recordingConfig        *PromptRecordingConfig
 	Stage                  string
 	TurnNo                 int
+}
+
+// ExcludePromptRecording marks auxiliary endpoint calls that still take part
+// in security auditing but do not represent a user-facing model turn.
+func (r *Request) ExcludePromptRecording() {
+	if r != nil {
+		r.recordingExcluded = true
+	}
 }
 
 func (r Request) Clone() Request {

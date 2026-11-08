@@ -42,6 +42,8 @@ var contentMediaRootKeys = []string{
 	"prompt", "input_prompt", "text_prompt", "description", "query", "lyrics",
 	"negative_prompt", "positive_prompt", "gpt_description_prompt", "prompt_en",
 	"final_prompt", "final_zh_prompt", "orig_prompt", "actual_prompt", "image_prompt",
+	"prompt_text", "user_prompt", "task_prompt", "video_prompt", "scene_description",
+	"audio_transcript", "audio_transcription", "transcript", "transcription", "speech_text",
 	"input", "request", "image", "images",
 }
 
@@ -274,11 +276,11 @@ func (a *promptContentAnalyzer) readProtocolObject(root map[string]any, path, ro
 	}
 	for _, key := range []string{"tools", "functions"} {
 		if value, exists := root[key]; exists {
-			a.addBlock("tool_definition", "", contentChild(path, key), "", a.cleanProtocolValue(value), "", "", "")
+			a.addToolDefinitions(value, contentChild(path, key))
 		}
 	}
 	for _, key := range contentMediaRootKeys {
-		if key == "prompt" || key == "input" || key == "request" || key == "image" || key == "images" {
+		if key == "input" || key == "request" || key == "image" || key == "images" {
 			continue
 		}
 		if text, ok := root[key].(string); ok {
@@ -295,8 +297,6 @@ func (a *promptContentAnalyzer) readProtocolObject(root map[string]any, path, ro
 			a.readContent(content, contentChild(path, "content"), role, a.messageGroup(path))
 		} else if text, ok := root["text"].(string); ok {
 			a.addText(role, text, contentChild(path, "text"), a.messageGroup(path))
-		} else if prompt, ok := root["prompt"].(string); ok {
-			a.addText("user", prompt, contentChild(path, "prompt"), a.messageGroup(path))
 		}
 	}
 	a.readAuxiliary(root, path, role, "")
@@ -351,9 +351,13 @@ func (a *promptContentAnalyzer) readMessage(raw any, path, inheritedRole, group 
 		a.readContent(raw, path, inheritedRole, group)
 		return
 	}
+	kind := strings.ToLower(contentString(item, "type"))
 	role := contentString(item, "role")
 	if role == "" {
 		role = inheritedRole
+		if role == "" && kind == "message" {
+			role = "assistant"
+		}
 	}
 	if role == "tool" || role == "function" {
 		a.addToolResult(item, path, group)
@@ -366,7 +370,6 @@ func (a *promptContentAnalyzer) readMessage(raw any, path, inheritedRole, group 
 			textRole = "thinking"
 		}
 	}
-	kind := strings.ToLower(contentString(item, "type"))
 	if kind != "" && kind != "message" {
 		a.readPart(item, path, textRole, group)
 		return
@@ -439,11 +442,25 @@ func (a *promptContentAnalyzer) readPart(raw any, path, role, group string) {
 	kind := strings.ToLower(contentString(part, "type"))
 	switch {
 	case kind == "additional_tools":
-		a.addBlock("tool_definition", role, path, "", a.cleanProtocolObject(part), "", "", "")
+		if tools, exists := part["tools"]; exists {
+			a.addToolDefinitions(tools, contentChild(path, "tools"))
+		} else {
+			a.addBlock("tool_definition", role, path, "", a.cleanProtocolObject(part), "", "", "")
+		}
+	case kind == "output_text":
+		a.addText("assistant", contentString(part, "text"), contentChild(path, "text"), group)
+		a.readAuxiliary(part, path, "assistant", group)
+	case kind == "compaction":
+		a.addBlock("metadata", role, path, "", map[string]any{"type": kind}, "", kind, "")
 	case contentStateKind(kind):
 		a.addBlock("metadata", role, path, "", a.cleanProtocolObject(part), "", "", "")
 	case contentMediaKind(kind), contentMediaPart(part):
-		a.filtered("media", part)
+		if text, ok := contentTextDocument(part); ok {
+			a.addText(role, text, contentChild(path, "source/data"), group)
+		} else {
+			a.addMediaText(part, path, role, group)
+			a.filtered("media", part)
+		}
 	case kind == "redacted_thinking":
 		a.filtered("encrypted", part)
 	case contentToolResultKind(kind), part["functionResponse"] != nil, part["function_response"] != nil:
@@ -453,7 +470,7 @@ func (a *promptContentAnalyzer) readPart(raw any, path, role, group string) {
 	case kind == "reasoning", kind == "thinking", kind == "compaction_summary", part["thought"] == true:
 		a.addReasoning(part, path, group)
 	case kind == "refusal":
-		a.addBlock("assistant", "assistant", path, contentString(part, "refusal"), nil, "", "", group)
+		a.addBlock("assistant", "assistant", path, contentString(part, "refusal"), nil, "", "refusal", group)
 		a.readAuxiliary(part, path, role, group)
 	default:
 		if text, ok := part["text"].(string); ok {
@@ -474,6 +491,80 @@ func (a *promptContentAnalyzer) readPart(raw any, path, role, group string) {
 			}
 		}
 	}
+}
+
+// Media payloads stay filtered, but protocol-provided transcripts, captions,
+// and descriptions are readable prompt text. Only inspect the known media
+// envelope fields so arbitrary nested business JSON is never reclassified.
+func (a *promptContentAnalyzer) addMediaText(part map[string]any, path, role, group string) {
+	for _, key := range []string{"transcript", "transcription", "text", "caption", "description"} {
+		if value, ok := part[key].(string); ok {
+			a.addText(role, value, contentChild(path, key), group)
+		}
+	}
+	for _, envelope := range []string{"input_audio", "audio", "input_video", "video", "file", "document"} {
+		if nested, ok := part[envelope].(map[string]any); ok {
+			for _, key := range []string{"transcript", "transcription", "text", "caption", "description"} {
+				if value, ok := nested[key].(string); ok {
+					a.addText(role, value, contentChild(path, envelope+"/"+key), group)
+				}
+			}
+		}
+	}
+}
+
+func contentTextDocument(part map[string]any) (string, bool) {
+	if strings.ToLower(contentString(part, "type")) != "document" {
+		return "", false
+	}
+	source, ok := part["source"].(map[string]any)
+	if !ok {
+		return "", false
+	}
+	text, ok := source["data"].(string)
+	if !ok {
+		return "", false
+	}
+	sourceType := strings.ToLower(contentString(source, "type"))
+	return text, sourceType == "text"
+}
+
+func (a *promptContentAnalyzer) addToolDefinitions(value any, path string) {
+	if definitions, ok := value.([]any); ok {
+		for index, raw := range definitions {
+			a.addToolDefinitions(raw, contentIndex(path, index))
+		}
+		return
+	}
+	definition, ok := value.(map[string]any)
+	if !ok {
+		a.addBlock("tool_definition", "", path, "", a.cleanProtocolValue(value), "", "", "")
+		return
+	}
+	name := contentString(definition, "name")
+	if function, ok := definition["function"].(map[string]any); ok && name == "" {
+		name = contentString(function, "name")
+	}
+	kind := strings.ToLower(contentString(definition, "type"))
+	if name == "" {
+		name = contentString(definition, "namespace")
+	}
+	if name == "" {
+		name = contentString(definition, "server")
+	}
+	tools, hasTools := definition["tools"]
+	if kind == "namespace" || hasTools {
+		if name == "functions" && hasTools {
+			a.addToolDefinitions(tools, contentChild(path, "tools"))
+			return
+		}
+		if strings.HasPrefix(name, "mcp__") {
+			name = strings.TrimSuffix(strings.SplitN(strings.TrimPrefix(name, "mcp__"), "__", 2)[0], "_")
+		}
+	} else if name == "" {
+		name = kind
+	}
+	a.addBlock("tool_definition", "", path, "", a.cleanProtocolObject(definition), "", name, "")
 }
 
 func (a *promptContentAnalyzer) addToolCall(item map[string]any, path, group string) {
@@ -528,6 +619,11 @@ func (a *promptContentAnalyzer) addToolCall(item map[string]any, path, group str
 }
 
 func (a *promptContentAnalyzer) addToolResult(item map[string]any, path, group string) {
+	if strings.ToLower(contentString(item, "type")) == "tool_search_output" {
+		if tools, exists := item["tools"]; exists {
+			a.addToolDefinitions(tools, contentChild(path, "tools"))
+		}
+	}
 	callID := contentFirstString(item, "call_id", "tool_call_id", "tool_use_id")
 	payload := item
 	for _, key := range []string{"functionResponse", "function_response"} {
@@ -554,6 +650,10 @@ func (a *promptContentAnalyzer) addToolResult(item map[string]any, path, group s
 			a.addBlock("metadata", "tool", contentChild(path, key), "", value, "", "", group)
 		case "content":
 			data[key] = a.cleanToolResultContent(value)
+		case "tools":
+			if strings.ToLower(contentString(item, "type")) != "tool_search_output" {
+				data[key] = contentClone(value)
+			}
 		case "output":
 			if contentString(item, "type") == "computer_call_output" {
 				if output, ok := value.(map[string]any); ok && (contentMediaPart(output) || contentString(output, "type") == "computer_screenshot") {
@@ -587,6 +687,10 @@ func (a *promptContentAnalyzer) cleanToolResultContent(value any) any {
 			continue
 		}
 		kind := strings.ToLower(contentString(part, "type"))
+		if text, ok := contentTextDocument(part); ok {
+			clean = append(clean, map[string]any{"type": "text", "text": text})
+			continue
+		}
 		if contentMediaKind(kind) || contentMediaPart(part) {
 			a.filtered("media", part)
 			continue
@@ -668,6 +772,9 @@ func (a *promptContentAnalyzer) addText(role, text, path, group string) {
 			a.addBlock(partCategory, role, path, text[:start+end], nil, "", "", group)
 			text = text[start+end:]
 		}
+		if a.identities["claude"] {
+			text = a.addClaudeReminders(role, text, path, group)
+		}
 	}
 	if text != "" {
 		a.addBlock(category, role, path, text, nil, "", "", group)
@@ -707,6 +814,10 @@ func (a *promptContentAnalyzer) addInstructionText(category, role, text, path, g
 				partCategory, partEnd = "agent", end
 			} else if contentSkillsHeading(line) {
 				partCategory, partEnd = "skills", contentSectionEnd(text, offset, end)
+			} else if a.identities["claude"] && contentClaudeMemoryHeading(line) {
+				partCategory, partEnd = "project", contentClaudeMemoryEnd(text, offset)
+			} else if a.identities["claude"] && strings.HasPrefix(line, "The following skills are available for use with the Skill tool:") {
+				partCategory, partEnd = "skills", contentBlankLineEnd(text, offset)
 			}
 		}
 		if partEnd > 0 {
@@ -739,7 +850,6 @@ func contentTaggedPrefix(text string) (string, int) {
 	for _, tag := range []struct{ opening, closing, category string }{
 		{"<environment_context>", "</environment_context>", "environment"},
 		{"<skills_instructions>", "</skills_instructions>", "skills"},
-		{"<system-reminder>", "</system-reminder>", "reminder"},
 		{"<permissions instructions>", "</permissions instructions>", "agent"},
 		{"<collaboration_mode>", "</collaboration_mode>", "agent"},
 		{"<multi_agent_role>", "</multi_agent_role>", "agent"},
@@ -751,7 +861,97 @@ func contentTaggedPrefix(text string) (string, int) {
 			}
 		}
 	}
+	if strings.HasPrefix(text, "<system-reminder") {
+		openingEnd := strings.IndexByte(text, '>')
+		if openingEnd >= len("<system-reminder") {
+			opening := text[len("<system-reminder"):openingEnd]
+			if strings.TrimSpace(opening) == "" || strings.HasPrefix(opening, " ") || strings.HasPrefix(opening, "\t") {
+				if end := strings.Index(text[openingEnd+1:], "</system-reminder>"); end >= 0 {
+					return "reminder", openingEnd + 1 + end + len("</system-reminder>")
+				}
+			}
+		}
+	}
 	return "", 0
+}
+
+func (a *promptContentAnalyzer) addClaudeReminders(role, text, path, group string) string {
+	for {
+		start := strings.Index(text, "<system-reminder")
+		if start < 0 {
+			return text
+		}
+		openingEnd := strings.IndexByte(text[start:], '>')
+		if openingEnd < len("<system-reminder") {
+			return text
+		}
+		opening := text[start+len("<system-reminder") : start+openingEnd]
+		if strings.TrimSpace(opening) != "" && !strings.HasPrefix(opening, " ") && !strings.HasPrefix(opening, "\t") {
+			return text
+		}
+		closeStart := strings.Index(text[start+openingEnd+1:], "</system-reminder>")
+		if closeStart < 0 {
+			return text
+		}
+		end := start + openingEnd + 1 + closeStart + len("</system-reminder>")
+		if start > 0 {
+			a.addBlock("user", role, path, text[:start], nil, "", "", group)
+		}
+		a.addBlock("reminder", role, path, text[start:end], nil, "", "", group)
+		text = text[end:]
+	}
+}
+
+func contentClaudeMemoryHeading(line string) bool {
+	return strings.HasPrefix(line, "Contents of ") && strings.Contains(line, " (") && strings.HasSuffix(line, "):")
+}
+
+func contentClaudeMemoryEnd(text string, start int) int {
+	closing := strings.Index(text[start:], "</system-reminder>")
+	closingAt := len(text)
+	if closing >= 0 {
+		closingAt = start + closing
+	}
+	for offset := start; offset < len(text); {
+		lineEnd := strings.IndexByte(text[offset:], '\n')
+		if lineEnd < 0 {
+			return closingAt
+		}
+		next := offset + lineEnd + 1
+		if next >= closingAt {
+			return closingAt
+		}
+		end := strings.IndexByte(text[next:], '\n')
+		if end < 0 {
+			end = len(text)
+		} else {
+			end += next
+		}
+		line := strings.TrimSpace(strings.TrimSuffix(text[next:end], "\r"))
+		if contentClaudeMemoryHeading(line) || strings.HasPrefix(line, "Instructions from: ") {
+			return next
+		}
+		offset = end
+		if offset < len(text) && text[offset] == '\n' {
+			offset++
+		}
+	}
+	return closingAt
+}
+
+func contentBlankLineEnd(text string, start int) int {
+	for offset := start; offset < len(text); {
+		lineEnd := strings.IndexByte(text[offset:], '\n')
+		if lineEnd < 0 {
+			return len(text)
+		}
+		next := offset + lineEnd + 1
+		if next < len(text) && (text[next] == '\n' || text[next] == '\r' && next+1 < len(text) && text[next+1] == '\n') {
+			return next
+		}
+		offset = next
+	}
+	return len(text)
 }
 
 func contentSkillsHeading(line string) bool {
@@ -934,6 +1134,8 @@ func contentRoleCategory(role string) string {
 	switch strings.ToLower(strings.TrimSpace(role)) {
 	case "assistant", "model":
 		return "assistant"
+	case "refusal":
+		return "assistant"
 	case "thinking":
 		return "thinking"
 	case "system", "developer", "instructions":
@@ -951,7 +1153,7 @@ func contentToolResultKind(kind string) bool {
 
 func contentStateKind(kind string) bool {
 	switch kind {
-	case "item_reference", "computer_initialize_state", "compaction_trigger":
+	case "item_reference", "computer_initialize_state", "compaction_trigger", "compaction":
 		return true
 	default:
 		return false

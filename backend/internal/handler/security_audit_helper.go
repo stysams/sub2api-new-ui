@@ -270,6 +270,12 @@ func buildSecurityAuditRequest(c *gin.Context, apiKey *service.APIKey, subject m
 		if c.Request.Host != "" {
 			request.Headers.Set("Host", c.Request.Host)
 		}
+		// Gemini countTokens is a prompt-analysis call, not a model turn.
+		// It still goes through moderation but should not appear in prompt history.
+		if strings.EqualFold(strings.TrimSpace(protocol), service.ContentModerationProtocolGemini) &&
+			c.Request.URL != nil && strings.HasSuffix(strings.TrimSpace(c.Request.URL.Path), ":countTokens") {
+			request.ExcludePromptRecording()
+		}
 	}
 	if turnNo, ok := securityAuditWSTurn(c); ok {
 		request.TurnNo = turnNo

@@ -54,8 +54,27 @@ func TestPromptRecordPolicyAllowsOnlyUserFacingEndpointsAndTurns(t *testing.T) {
 	for _, endpoint := range []string{"/v1/responses", "/v1/messages", "/v1/chat/completions"} {
 		require.True(t, ShouldRecordPromptRequest(Request{Endpoint: endpoint}), endpoint)
 	}
+	for _, request := range []Request{
+		{Endpoint: "/v1beta/models", Protocol: "gemini"},
+		{Endpoint: "/v1/images/generations", Protocol: "openai_images"},
+		{Endpoint: "/v1/images/edits", Protocol: "openai_images"},
+		{Endpoint: "/v1/videos/generations", Protocol: "openai_images"},
+		{Endpoint: "/v1/videos/edits", Protocol: "openai_images"},
+		{Endpoint: "/v1/videos/extensions", Protocol: "openai_images"},
+	} {
+		require.True(t, ShouldRecordPromptRequest(request), request.Endpoint)
+	}
 	for _, endpoint := range []string{"", "/v1/alpha/search", "/v1/embeddings", "/v1/responses/"} {
 		require.False(t, ShouldRecordPromptRequest(Request{Endpoint: endpoint}), endpoint)
+	}
+	for _, request := range []Request{
+		{Endpoint: "/v1beta/models", Protocol: "openai_chat_completions"},
+		{Endpoint: "/v1beta/cachedContents", Protocol: "gemini"},
+		{Endpoint: "/v1/images/generations", Protocol: "gemini"},
+		{Endpoint: "/v1/images/edits", Protocol: "openai_chat_completions"},
+		{Endpoint: "/v1/videos/req-1", Protocol: "openai_images"},
+	} {
+		require.False(t, ShouldRecordPromptRequest(request), request.Endpoint+" "+request.Protocol)
 	}
 
 	for _, metadata := range []string{
@@ -85,9 +104,22 @@ func TestPromptRecordSessionIDUsesProviderSessionHeaderWithoutRequestIDFallback(
 		"X-Claude-Code-Session-Id": {"claude-session"},
 	}))
 	require.Empty(t, promptRecordSessionID(nil))
+	require.Equal(t, "conversation", promptRecordSessionID(map[string][]string{
+		"X-Conversation-Id": {"conversation"},
+	}))
+	require.Equal(t, "thread", promptRecordSessionID(map[string][]string{
+		"X-Thread-Id": {"thread"},
+	}))
 	require.Len(t, []byte(promptRecordSessionID(map[string][]string{
 		"Session-Id": {strings.Repeat("会", 100)},
 	})), 126)
+}
+
+func TestAuxiliaryRequestCanBeModeratedWithoutPromptRecording(t *testing.T) {
+	req := Request{Endpoint: "/v1beta/models", Protocol: "gemini"}
+	require.True(t, ShouldRecordPromptRequest(req))
+	req.ExcludePromptRecording()
+	require.False(t, ShouldRecordPromptRequest(req))
 }
 
 func TestPromptRecordServiceUsesBoundedQueuesWhenSaturated(t *testing.T) {

@@ -33,6 +33,38 @@ func TestContentReviewImageProtocolRetainsNaturalPrompt(t *testing.T) {
 	require.NotContains(t, PromptContentText(document), "OPAQUE_IMAGE")
 }
 
+func TestContentReviewRecognizesPromptAliasesAndMediaTranscripts(t *testing.T) {
+	input, err := decodePromptDocument([]byte(`{"prompt_text":"prompt alias","user_prompt":"user alias","video_prompt":"video intent","audio_transcript":"recognized speech","messages":[{"role":"user","content":[{"type":"input_audio","transcript":"audio segment","data":"OPAQUE_AUDIO"},{"type":"input_video","description":"video segment","data":"OPAQUE_VIDEO"}]}]}`))
+	require.NoError(t, err)
+	document := AnalyzePromptContent("openai_images", input, RecommendedPromptRecordingPolicy(), 30)
+	text := PromptContentText(document)
+	for _, expected := range []string{"prompt alias", "user alias", "video intent", "recognized speech", "audio segment", "video segment"} {
+		require.Contains(t, text, expected)
+	}
+	for _, excluded := range []string{"OPAQUE_AUDIO", "OPAQUE_VIDEO"} {
+		require.NotContains(t, text, excluded)
+	}
+	require.Positive(t, document.Filtered["media"].Count)
+}
+
+func TestContentReviewIncludesRootPromptAlongsideConversation(t *testing.T) {
+	input, err := decodePromptDocument([]byte(`{"prompt":"root prompt","messages":[{"role":"user","content":"chat question"}]}`))
+	require.NoError(t, err)
+	document := AnalyzePromptContent("openai_chat", input, RecommendedPromptRecordingPolicy(), 30)
+	require.Contains(t, PromptContentText(document), "root prompt")
+	require.Contains(t, PromptContentText(document), "chat question")
+}
+
+func TestContentReviewRefusalIsDistinctWithinAssistantCategory(t *testing.T) {
+	input, err := decodePromptDocument([]byte(`{"messages":[{"role":"assistant","content":[{"type":"refusal","refusal":"refusal-marker"}]}]}`))
+	require.NoError(t, err)
+	document := AnalyzePromptContent("anthropic_messages", input, RecommendedPromptRecordingPolicy(), 30)
+	require.Contains(t, PromptContentText(document), "refusal-marker")
+	require.Len(t, document.Blocks, 1)
+	require.Equal(t, "assistant", document.Blocks[0].Category)
+	require.Equal(t, "refusal", document.Blocks[0].Name)
+}
+
 func TestContentReviewChatAssistantAnalysisChannelIsThinking(t *testing.T) {
 	input, err := decodePromptDocument([]byte(`{"messages":[{"role":"assistant","channel":"analysis","content":"INTERNAL_REASONING"},{"role":"assistant","channel":"final","content":"visible answer"}]}`))
 	require.NoError(t, err)
@@ -70,12 +102,16 @@ func TestContentReviewAdditionalToolsSwitchIndependentOfDeveloper(t *testing.T) 
 }
 
 func TestContentReviewToolSearchOutputUsesToolResultSwitch(t *testing.T) {
-	input, err := decodePromptDocument([]byte(`{"input":[{"type":"tool_search_output","call_id":"call_1","output":"SEARCH_RESULT"}]}`))
+	input, err := decodePromptDocument([]byte(`{"input":[{"type":"tool_search_output","call_id":"call_1","tools":[{"name":"search_private","description":"PRIVATE_DEFINITION"}],"output":"SEARCH_RESULT"}]}`))
 	require.NoError(t, err)
 	policy := RecommendedPromptRecordingPolicy()
 	policy.Keep["user"] = false
 	document := AnalyzePromptContent("responses", input, policy, 30)
 	require.Contains(t, PromptContentText(document), "SEARCH_RESULT")
+	require.NotContains(t, PromptContentText(document), "PRIVATE_DEFINITION")
+	policy.Keep["tool_definition"] = true
+	document = AnalyzePromptContent("responses", input, policy, 30)
+	require.Equal(t, 1, strings.Count(PromptContentText(document), "PRIVATE_DEFINITION"))
 }
 
 func TestContentReviewCompactionSummaryUsesSummarySwitch(t *testing.T) {
