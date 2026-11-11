@@ -44,6 +44,7 @@ type AdminHandlers struct {
 	Compliance             *admin.ComplianceHandler
 	AuditLog               *admin.AuditLogHandler
 	Upstream               *admin.UpstreamHandler
+	ModelFingerprint       *admin.ModelFingerprintHandler
 }
 
 // Handlers contains all HTTP handlers

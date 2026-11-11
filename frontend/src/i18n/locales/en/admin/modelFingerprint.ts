@@ -1,0 +1,50 @@
+export default {
+  "modelFingerprint": {
+    "subtitle": "Collect three numerical fingerprints from a fixed account and model, then compare reference candidates.",
+    "account": "Upstream account",
+    "chooseAccount": "Select an API key account",
+    "model": "Requested model ID",
+    "modelPlaceholder": "Supports account model mapping or manual entry",
+    "verify": "Run verification",
+    "running": "Verifying, up to about 6 minutes…",
+    "disclaimer": "Sends 3 sampling requests and uses upstream quota. Probabilities are relative within the reference bank, not proof of identity. An upstream-reported model name is not proof either.",
+    "scope": "Supports OpenAI-compatible and Anthropic accounts with direct API keys. OAuth and inherited credentials are not supported. Choose a protocol automatically or manually.",
+    "latest": "Verification details",
+    "history": "Test records",
+    "empty": "No test records",
+    "reference": "Numerical fingerprint reference bank",
+    "noReference": "Download the reference bank before verifying.",
+    "download": "Download / update reference data",
+    "downloading": "Downloading…",
+    "protocol": "Request protocol",
+    "auto": "Choose from account configuration",
+    "export": "Export JSON",
+    "evidence": "Valid samples: {count}/3 · Reference version: {version}",
+    "candidate": "Candidate model",
+    "ranking": "Ranking score",
+    "probability": "Relative bank probability",
+    "sample": "Sample {index}",
+    "accountId": "Account ID (optional)",
+    "error": "Operation failed; please retry",
+    "status": {
+      "cancelled": "Cancelled / timed out",
+      "running": "Running / unfinished",
+      "scored": "Candidates ranked",
+      "partial": "Partial sample ranking",
+      "failed": "Sampling failed",
+      "unscorable": "Insufficient / unscorable",
+      "not_model": "Unusual sequence shape",
+      "route_mismatch": "Reported model differs from requested model"
+    },
+    "reason": {
+      "insufficient_samples": "Too few valid numbers to score.",
+      "sequence_shape": "The sequence differs from language model responses in the reference bank. No ranking was produced.",
+      "partial_samples": "Only partial samples are available; probabilities are unavailable.",
+      "reference_closed_set": "Candidates are compared within the reference bank. Unknown models are not included; identity is not confirmed.",
+      "sampling": "Sampling has not finished; no ranking yet.",
+      "invalid_reference": "The reference detector cannot score these samples.",
+      "route_mismatch": "The reported model differs from the requested upstream model. Ranking stopped; check aliases, mapping and upstream routing.",
+      "cancelled": "Cancelled or timed out. Received evidence is retained without a ranking."
+    }
+  }
+}

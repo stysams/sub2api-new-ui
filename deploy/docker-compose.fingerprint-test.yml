@@ -1,0 +1,40 @@
+# Isolated checks; does not start or modify application databases/test data.
+services:
+  backend:
+    image: golang:1.27.3-alpine
+    working_dir: /src/backend
+    environment:
+      GOPROXY: https://goproxy.cn,direct
+      FINGERPRINT_TEST_DATABASE_URL: postgres://fingerprint:fingerprint-test-only@database:5432/fingerprint?sslmode=disable
+    volumes:
+      - ..:/src
+      - fingerprint-gomod:/go/pkg/mod
+      - fingerprint-gobuild:/root/.cache/go-build
+    command: ["sh", "-c", "go test ./internal/modelfingerprint && go test ./internal/service ./internal/repository ./internal/handler/admin ./internal/server/routes -run Fingerprint && go build -o /tmp/sub2api-fingerprint ./cmd/server"]
+  frontend:
+    image: node:24-alpine
+    working_dir: /src/frontend
+    volumes:
+      - ..:/src
+    command: ["sh", "-c", "./node_modules/.bin/vue-tsc --noEmit && ./node_modules/.bin/vitest run src/features/model-fingerprint src/i18n/__tests__/localeKeyCompleteness.spec.ts"]
+  database:
+    image: postgres:18-alpine
+    environment:
+      POSTGRES_USER: fingerprint
+      POSTGRES_PASSWORD: fingerprint-test-only
+      POSTGRES_DB: fingerprint
+    volumes:
+      - fingerprint-postgres:/var/lib/postgresql
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U fingerprint -d fingerprint"]
+      interval: 2s
+      timeout: 3s
+      retries: 30
+volumes:
+  fingerprint-postgres:
+  fingerprint-gomod:
+    external: true
+    name: sub2api-go-mod-cache
+  fingerprint-gobuild:
+    external: true
+    name: sub2api-go-build-cache

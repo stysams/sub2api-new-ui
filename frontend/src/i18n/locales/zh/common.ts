@@ -236,6 +236,7 @@ export default {
     securityAudit: '安全审计',
     contentModeration: '内容审计',
     promptAudit: '提示词审计',
+    modelFingerprint: '模型指纹',
     promptRecords: '提示词记录',
     auditLogs: '操作日志',
   },

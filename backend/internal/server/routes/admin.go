@@ -128,6 +128,10 @@ func RegisterAdminRoutes(
 
 		// 独立提示词输入审计
 		registerPromptAuditRoutes(admin, h)
+		admin.POST("/model-fingerprint/verify", h.Admin.ModelFingerprint.Verify)
+		admin.GET("/model-fingerprint/records", h.Admin.ModelFingerprint.List)
+		admin.GET("/model-fingerprint/reference", h.Admin.ModelFingerprint.Reference)
+		admin.POST("/model-fingerprint/reference", h.Admin.ModelFingerprint.RefreshReference)
 
 		// 用户提示词调用记录
 		registerPromptRecordRoutes(admin, h)

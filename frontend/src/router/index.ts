@@ -689,6 +689,12 @@ const routes: RouteRecordRaw[] = [
     meta: { requiresAuth: true, requiresAdmin: true, title: 'Prompt Records', titleKey: 'admin.promptRecords.title', descriptionKey: 'admin.promptRecords.description' }
   },
   {
+    path: '/admin/model-fingerprint',
+    name: 'AdminModelFingerprint',
+    component: () => import('@/features/model-fingerprint/ModelFingerprintView.vue'),
+    meta: { requiresAuth: true, requiresAdmin: true, title: 'Model Fingerprint', titleKey: 'nav.modelFingerprint' }
+  },
+  {
     path: '/admin/usage',
     name: 'AdminUsage',
     component: () => import('@/views/admin/UsageView.vue'),

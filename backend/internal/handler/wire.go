@@ -53,12 +53,14 @@ func ProvideAdminHandlers(
 	settingService *service.SettingService,
 	opencodeGoUsage *service.OpenCodeGoUsageService,
 	claudeResetCredits *service.ClaudeResetCreditService,
+	modelFingerprintService *service.ModelFingerprintService,
 ) *AdminHandlers {
 	accountHandler.SetUpstreamBillingProbeService(upstreamBillingProbe)
 	accountHandler.SetOllamaCloudUsageService(ollamaCloudUsage)
 	accountHandler.SetCodexTicketSettings(settingService)
 	accountHandler.SetOpenCodeGoUsageService(opencodeGoUsage)
 	accountHandler.SetClaudeResetCreditService(claudeResetCredits)
+	modelFingerprintHandler := admin.NewModelFingerprintHandler(modelFingerprintService)
 	return &AdminHandlers{
 		Dashboard:              dashboardHandler,
 		User:                   userHandler,
@@ -97,6 +99,7 @@ func ProvideAdminHandlers(
 		Compliance:             complianceHandler,
 		AuditLog:               auditLogHandler,
 		Upstream:               upstreamHandler,
+		ModelFingerprint:       modelFingerprintHandler,
 	}
 }
 

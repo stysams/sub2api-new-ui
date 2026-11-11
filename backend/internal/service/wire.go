@@ -286,6 +286,10 @@ func ProvideAccountTestService(
 	return service
 }
 
+func ProvideModelFingerprintService(accounts AccountRepository, records ModelFingerprintRepository, upstream HTTPUpstream, cfg *config.Config) *ModelFingerprintService {
+	return NewModelFingerprintService(accounts, records, upstream, cfg)
+}
+
 func ProvideGrokQuotaService(
 	accountRepo AccountRepository,
 	proxyRepo ProxyRepository,
@@ -874,6 +878,7 @@ func ProvideAdminUpstreamService(
 
 // ProviderSet is the Wire provider set for all services
 var ProviderSet = wire.NewSet(
+	ProvideModelFingerprintService,
 	// Core services
 	ProvideAuthService,
 	NewPasskeyService,

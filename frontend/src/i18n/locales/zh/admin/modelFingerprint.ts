@@ -1,0 +1,50 @@
+export default {
+  "modelFingerprint": {
+    "subtitle": "对固定账号与模型采集三轮数字指纹，并与参考库比较候选。",
+    "account": "上游账号",
+    "chooseAccount": "选择 API Key 账号",
+    "model": "请求模型 ID",
+    "modelPlaceholder": "支持账号模型映射，可手动输入",
+    "verify": "开始验证",
+    "running": "验证中，最多约 6 分钟…",
+    "disclaimer": "将发送 3 次采样请求并消耗上游额度。候选概率仅在参考库内归一化，不能单独证明模型身份；上游自报模型名也不是身份凭证。",
+    "scope": "支持直接持有 API Key 的 OpenAI 兼容及 Anthropic 账号；暂不支持 OAuth、继承凭据。协议可自动选择或手动指定。",
+    "latest": "验证详情",
+    "history": "测试记录",
+    "empty": "暂无测试记录",
+    "reference": "数字指纹参考库",
+    "noReference": "尚未下载参考库，下载后才能验证。",
+    "download": "下载 / 更新参考数据",
+    "downloading": "正在下载…",
+    "protocol": "请求协议",
+    "auto": "根据账号自动选择",
+    "export": "导出 JSON",
+    "evidence": "有效样本：{count}/3 · 参考库版本：{version}",
+    "candidate": "候选模型",
+    "ranking": "排名分数",
+    "probability": "库内相对概率",
+    "sample": "采样 {index}",
+    "accountId": "账号 ID（可选）",
+    "error": "操作失败，请重试",
+    "status": {
+      "cancelled": "已取消 / 超时",
+      "running": "执行中 / 未完成",
+      "scored": "已生成候选排名",
+      "partial": "部分样本排名",
+      "failed": "采样失败",
+      "unscorable": "样本不足 / 不可评分",
+      "not_model": "序列特征异常",
+      "route_mismatch": "上游返回模型与请求不一致"
+    },
+    "reason": {
+      "insufficient_samples": "有效数字数量不足，无法评分。",
+      "sequence_shape": "数字序列的变化方式与参考库模型回答不同，未生成排名。",
+      "partial_samples": "仅使用部分有效样本，概率不可用。",
+      "reference_closed_set": "这是参考库内的候选比较结果，不包含库外模型，也不代表身份已证实。",
+      "sampling": "采样尚未完成，暂不评分。",
+      "invalid_reference": "参考检测器无法对当前样本评分。",
+      "route_mismatch": "上游自报模型与实际请求模型不同，停止评分，请核查别名、模型映射或上游路由。",
+      "cancelled": "任务已取消或超时，已保存收到的证据，未生成排名。"
+    }
+  }
+}

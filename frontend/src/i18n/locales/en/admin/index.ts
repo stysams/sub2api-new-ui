@@ -6,6 +6,7 @@ import ops from './ops'
 import settings from './settings'
 import audit from './audit'
 import promptAudit from './promptAudit'
+import modelFingerprint from './modelFingerprint'
 import plugins from './plugins'
 import upstreams from './upstreams'
 
@@ -18,6 +19,7 @@ export default {
   ...settings,
   ...audit,
   ...promptAudit,
+  ...modelFingerprint,
   ...plugins,
   ...upstreams,
 }
