@@ -82,7 +82,7 @@ func (s *upstreamSyncAdminStub) UpdateAccount(_ context.Context, id int64, input
 func newUpstreamSyncTestService() (*adminUpstreamService, *upstreamSyncRepositoryStub, *upstreamSyncAdminStub) {
 	rate := 1.25
 	repo := &upstreamSyncRepositoryStub{
-		resource: &UpstreamResource{ID: 7, UpstreamID: 3, GroupName: "premium", KeyEncrypted: "encrypted:remote-key", ModelsSnapshot: []string{"model-a"}},
+		resource: &UpstreamResource{ID: 7, UpstreamID: 3, GroupName: "premium", Name: "primary-key", KeyEncrypted: "encrypted:remote-key", ModelsSnapshot: []string{"model-a"}},
 		upstream: &Upstream{ID: 3, Name: "relay", BaseURL: "https://relay.example.com", GroupSnapshot: domain.UpstreamGroupSnapshot{
 			Items: []domain.UpstreamGroupItem{{Name: "premium", Ratio: &rate}},
 		}},
@@ -108,6 +108,7 @@ func TestUpstreamSyncCreatesOneAccountPerSelectedPlatform(t *testing.T) {
 	require.Len(t, admin.created, 2)
 	for _, input := range admin.created {
 		require.Equal(t, AccountTypeAPIKey, input.Type)
+		require.Equal(t, "relay-primary-key", input.Name)
 		require.Equal(t, "remote-key", input.Credentials["api_key"])
 		require.Equal(t, "https://relay.example.com", input.Credentials["base_url"])
 		require.Equal(t, 1.25, *input.RateMultiplier)
@@ -120,8 +121,6 @@ func TestUpstreamSyncCreatesOneAccountPerSelectedPlatform(t *testing.T) {
 			t.Fatalf("unexpected platform %q", input.Platform)
 		}
 	}
-	require.Equal(t, "relay-anthropic-1.25", admin.created[0].Name)
-
 	result, err = svc.SyncToAccount(context.Background(), 7, []int64{1, 2, 3})
 	require.NoError(t, err)
 	require.Equal(t, 2, result.Skipped)
@@ -139,13 +138,13 @@ func TestUpstreamSyncCreatesOneAccountPerSelectedPlatform(t *testing.T) {
 }
 
 func TestUpstreamSyncAccountNameFitsAccountLimit(t *testing.T) {
-	name := upstreamSyncAccountName("", PlatformOpenAI, "1.25")
-	require.Equal(t, "-openai-1.25", name)
-	longName := upstreamSyncAccountName(strings.Repeat("中", 100), PlatformAnthropic, "1.25")
+	name := upstreamSyncAccountName("relay", "primary-key")
+	require.Equal(t, "relay-primary-key", name)
+	longName := upstreamSyncAccountName(strings.Repeat("中", 100), "primary-key")
 	require.LessOrEqual(t, len([]rune(longName)), 100)
-	require.Contains(t, longName, "-anthropic-1.25")
-	extremeRate := upstreamSyncAccountName("relay", PlatformOpenAI, strings.Repeat("9", 120))
-	require.LessOrEqual(t, len([]rune(extremeRate)), 100)
+	require.Equal(t, strings.Repeat("中", 88)+"-primary-key", longName)
+	longKey := upstreamSyncAccountName("relay", strings.Repeat("密", 120))
+	require.Equal(t, "-"+strings.Repeat("密", 99), longKey)
 }
 
 func TestUpstreamSyncRejectsUnsupportedAndOAuthOnlyGroupsBeforeCreatingAccounts(t *testing.T) {

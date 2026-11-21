@@ -86,6 +86,7 @@ const messages: Record<string, string> = {
 	'usage.upstreamResponseModel': 'Upstream response',
 	'usage.modelVariant': 'Possible version variant',
 	'usage.modelMismatch': 'Different model',
+  'usage.cacheHitRate': 'Cache hit rate',
 }
 
 vi.mock('vue-i18n', async () => {
@@ -177,6 +178,24 @@ describe('admin UsageTable tooltip', () => {
     })
     expect(wrapper.findAll('[data-testid="output-tps"]').map(cell => cell.text())).toEqual(['50.0 tok/s', '—', '—'])
     expect(wrapper.text()).toContain('Output TPS')
+  })
+
+  it('shows the cache hit rate beside cache-read tokens', () => {
+    const row = {
+      ...baseImageRow,
+      request_id: 'req-cache-rate',
+      image_count: 0,
+      billing_mode: 'token',
+      input_tokens: 2263,
+      cache_creation_tokens: 0,
+      cache_read_tokens: 41300,
+    }
+    const wrapper = mount(UsageTable, {
+      props: { data: [row], loading: false, columns: [] },
+      global: { stubs: { DataTable: DataTableStub, EmptyState: true, Icon: true, Teleport: true } },
+    })
+
+    expect(wrapper.text()).toContain('Cache hit rate 94.8%')
   })
 
   beforeEach(() => {

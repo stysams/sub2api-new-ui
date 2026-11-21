@@ -575,7 +575,7 @@ func (s *adminUpstreamService) SyncToAccount(ctx context.Context, resourceID int
 		platforms = append(platforms, platform)
 	}
 	sort.Strings(platforms)
-	var secret, rateText string
+	var secret string
 	var rate float64
 	for _, platform := range platforms {
 		if _, exists := linked[platform]; !exists {
@@ -583,7 +583,7 @@ func (s *adminUpstreamService) SyncToAccount(ctx context.Context, resourceID int
 			if err != nil {
 				return nil, err
 			}
-			rate, rateText, err = s.resolveRate(ctx, u, resource.GroupName)
+			rate, _, err = s.resolveRate(ctx, u, resource.GroupName)
 			if err != nil {
 				return nil, err
 			}
@@ -630,7 +630,7 @@ func (s *adminUpstreamService) SyncToAccount(ctx context.Context, resourceID int
 			credentials["model_mapping"] = modelMapping
 		}
 		extra := map[string]any{"upstream_sync": map[string]any{"upstream_id": u.ID, "resource_id": resource.ID, "remote_id": resource.RemoteID, "group_name": resource.GroupName, "platform": platform}}
-		account, createErr := s.admin.CreateAccount(ctx, &CreateAccountInput{Name: upstreamSyncAccountName(u.Name, platform, rateText), Platform: platform, Type: AccountTypeAPIKey, Credentials: credentials, Extra: extra, Concurrency: 5, Priority: 1, RateMultiplier: &rate, GroupIDs: groupsByPlatform[platform], SkipDefaultGroupBind: true})
+		account, createErr := s.admin.CreateAccount(ctx, &CreateAccountInput{Name: upstreamSyncAccountName(u.Name, resource.Name), Platform: platform, Type: AccountTypeAPIKey, Credentials: credentials, Extra: extra, Concurrency: 5, Priority: 1, RateMultiplier: &rate, GroupIDs: groupsByPlatform[platform], SkipDefaultGroupBind: true})
 		if createErr != nil {
 			result.Failed++
 			result.Items = append(result.Items, UpstreamSyncItem{ResourceID: resourceID, Platform: platform, Status: "failed", Message: createErr.Error()})
@@ -658,13 +658,20 @@ func isUpstreamSyncPlatform(platform string) bool {
 	}
 }
 
-func upstreamSyncAccountName(upstreamName, platform, rateText string) string {
-	suffix := []rune("-" + platform + "-" + rateText)
-	if len(suffix) > 99 {
-		suffix = suffix[:99]
+func upstreamSyncAccountName(upstreamName, keyName string) string {
+	const maxNameRunes = 100
+
+	key := []rune(keyName)
+	maxKeyRunes := maxNameRunes - 1 // Reserve one rune for the separator.
+	if len(key) > maxKeyRunes {
+		key = key[:maxKeyRunes]
 	}
+	suffix := make([]rune, 0, len(key)+1)
+	suffix = append(suffix, '-')
+	suffix = append(suffix, key...)
+
 	prefix := []rune(upstreamName)
-	if maxPrefix := 100 - len(suffix); len(prefix) > maxPrefix {
+	if maxPrefix := maxNameRunes - len(suffix); len(prefix) > maxPrefix {
 		prefix = prefix[:maxPrefix]
 	}
 	return string(prefix) + string(suffix)
