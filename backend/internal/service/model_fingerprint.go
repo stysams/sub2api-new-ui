@@ -274,7 +274,7 @@ func (s *ModelFingerprintService) sample(ctx context.Context, a *Account, endpoi
 		setAnthropicAPIKeyAuthHeader(req.Header, a, token, a.GetCredential("base_url"))
 		req.Header.Set("anthropic-version", "2023-06-01")
 	}
-	a.ApplyHeaderOverrides(req.Header)
+	a.ApplyHeaderOverrides(req.Context(), req.Header)
 	resp, err := s.upstream.Do(req, resolveAccountProxyURL(a), a.ID, a.Concurrency)
 	if err != nil {
 		sample.Error = "upstream request failed"
